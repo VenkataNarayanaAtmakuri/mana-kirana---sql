@@ -1,6 +1,6 @@
 // Compatibility shim: the frontend now talks to the Mana Kirana Express API,
 // not directly to Supabase. Kept at this path to minimize changes to App.jsx.
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : '')
 export const supabaseConfigured = true
 const listeners = new Set()
 let currentUser = null
