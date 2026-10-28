@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, CircleHelp } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
+import ChangePasswordDialog from './components/ChangePasswordDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
 import CustomerOrderHistory from './components/CustomerOrderHistory.jsx'
 import OrderNotificationControl from './components/OrderNotificationControl.jsx'
@@ -70,7 +71,7 @@ function calculateReadyAt(currentOrders) {
   return new Date(Math.max(nextAfterQueue, nextAfterScheduled)).toISOString()
 }
 
-function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onSignOut }) {
+function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onChangePassword, onSignOut }) {
   return (
     <header className="top">
       <div className="wrap top-inner">
@@ -91,7 +92,7 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
           </button>
         </div>
         {supabaseConfigured && (authUser
-          ? <button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button>
+          ? <div className="account-actions"><button className="account-button" type="button" onClick={onChangePassword}>Change password</button><button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button></div>
           : <div className="account-actions"><button className="account-button" type="button" onClick={onCustomerSignIn}>Customer Sign In</button><button className="account-button shopkeeper-signin-button" type="button" onClick={onShopkeeperSignIn}>Shopkeeper Sign In</button></div>)}
       </div>
     </header>
@@ -167,6 +168,7 @@ function App() {
   const [profileLoading, setProfileLoading] = useState(false)
   const [showAuthDialog, setShowAuthDialog] = useState(false)
   const [authDialogRole, setAuthDialogRole] = useState('customer')
+  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false)
   const [showSignOutDialog, setShowSignOutDialog] = useState(false)
   const [signOutBusy, setSignOutBusy] = useState(false)
   const [signOutError, setSignOutError] = useState('')
@@ -887,7 +889,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
@@ -1030,6 +1032,7 @@ function App() {
         </div>
       )}
       {showAuthDialog && <AuthDialog role={authDialogRole} onClose={() => setShowAuthDialog(false)} />}
+      {showChangePasswordDialog && <ChangePasswordDialog onClose={() => setShowChangePasswordDialog(false)} />}
     </div>
   )
 }

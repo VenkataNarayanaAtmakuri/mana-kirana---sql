@@ -30,6 +30,7 @@ export async function placeLiveOrder(details) { return request('/api/orders', { 
 export async function updateLiveOrderStatus(orderId, nextStatus) { return request('/api/orders/' + orderId + '/status', { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) }) }
 export async function hideLiveOrder(orderId) { return request('/api/orders/' + encodeURIComponent(orderId), { method: 'DELETE' }) }
 export async function setLiveRequestRate(orderItemId, rate) { return request('/api/order-items/' + orderItemId + '/price', { method: 'PATCH', body: JSON.stringify({ rate }) }) }
+export async function changeLivePassword(currentPassword, newPassword) { return request('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }) }
 function poll(onChange, onStatus, account = false) {
   let active = true
   const check = async () => { try { if (account) await request('/api/auth/me'); if (active) { onChange(); onStatus?.('SUBSCRIBED') } } catch (error) { onStatus?.('ERROR', error) } }

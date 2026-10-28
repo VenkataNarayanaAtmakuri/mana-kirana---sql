@@ -96,7 +96,7 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 ## Current API endpoints
 
 - `GET /api/health`
-- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `GET /api/auth/me`, `POST /api/auth/logout`
 - `GET /api/catalog`
 - `GET /api/orders`, `POST /api/orders`, `PATCH /api/orders/:id/status`
 - `PATCH /api/order-items/:id/price`

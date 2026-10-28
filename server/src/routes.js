@@ -5,6 +5,7 @@ import { pool } from './db.js'
 
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
+const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
   if (digits.length === 10 && /^[6-9]/.test(digits)) return '+91' + digits
@@ -53,6 +54,23 @@ router.post('/auth/login', authLimiter, async (req, res) => {
   }
   req.session.user = publicUser(rows[0])
   res.json({ user: req.session.user })
+})
+router.post('/auth/change-password', passwordChangeLimiter, requireAuth, async (req, res) => {
+  const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : ''
+  const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : ''
+  if (!currentPassword) return res.status(400).json({ error: 'Enter your current password.' })
+  if (newPassword.length < 8 || newPassword.length > 128) return res.status(400).json({ error: 'New password must be between 8 and 128 characters.' })
+
+  const { rows } = await pool.query('SELECT password_hash FROM profiles WHERE id=$1', [req.session.user.id])
+  if (!rows[0]) return res.status(401).json({ error: 'Please sign in again to continue.' })
+  const currentMatches = await argon2.verify(rows[0].password_hash, currentPassword).catch(() => false)
+  if (!currentMatches) return res.status(401).json({ error: 'Current password is incorrect.' })
+  const reusesCurrentPassword = await argon2.verify(rows[0].password_hash, newPassword).catch(() => false)
+  if (reusesCurrentPassword) return res.status(400).json({ error: 'Choose a new password different from your current one.' })
+
+  const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id })
+  await pool.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, req.session.user.id])
+  res.json({ ok: true })
 })
 router.get('/auth/me', (req, res) => res.json({ user: req.session.user || null }))
 router.post('/auth/logout', (req, res) => req.session.destroy((error) => {
