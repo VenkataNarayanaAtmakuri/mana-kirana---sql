@@ -124,6 +124,34 @@ router.get('/orders', requireAuth, async (req, res) => {
   const { rows } = await pool.query(`SELECT o.*, COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where} GROUP BY o.id ORDER BY o.created_at DESC`, params)
   res.json(rows)
 })
+router.delete('/orders/:id', requireAuth, async (req, res) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query('SELECT id,customer_id,status FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
+    const order = rows[0]
+    if (!order) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Order not found.' })
+    }
+    if (req.session.user.role !== 'shopkeeper' && order.customer_id !== req.session.user.id) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Order not found.' })
+    }
+    if (order.status !== 'collected') {
+      await client.query('ROLLBACK')
+      return res.status(409).json({ error: 'Only collected orders can be deleted.' })
+    }
+    const deleted = await client.query('DELETE FROM orders WHERE id=$1 RETURNING id', [order.id])
+    await client.query('COMMIT')
+    res.json({ id: deleted.rows[0].id, deleted: true })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+})
 router.post('/orders', requireAuth, async (req, res) => {
   const { name, phone: rawPhone, channel, payment, items } = req.body
   const phone = phoneE164(rawPhone)

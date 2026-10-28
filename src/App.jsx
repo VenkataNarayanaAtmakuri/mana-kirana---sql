@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Check, CircleHelp } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
+import CustomerOrderHistory from './components/CustomerOrderHistory.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import ProductCard from './components/ProductCard.jsx'
-import { formatMoney, makeSampleOrders, MINIMUM_ORDER_VALUE, orderChannelLabel, PICKUP_SLOT_MINUTES, readCategories, readOrders, readProducts, STORAGE_KEY } from './data.js'
+import { formatMoney, formatReadyTime, makeSampleOrders, MINIMUM_ORDER_VALUE, orderChannelLabel, PICKUP_SLOT_MINUTES, readCategories, readOrders, readProducts, STORAGE_KEY } from './data.js'
 import {
   archiveLiveCategory,
   archiveLiveProduct,
   createLiveCategory,
   createLiveProduct,
+  deleteLiveOrder,
   fetchCustomerMessages,
   fetchLiveCatalog,
   fetchLiveOrders,
@@ -148,6 +150,7 @@ function App() {
   const [successOrderSnapshot, setSuccessOrderSnapshot] = useState(null)
   const [mobileCartOpen, setMobileCartOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [deletingOrderId, setDeletingOrderId] = useState('')
 
   useEffect(() => {
     if (supabaseConfigured) return
@@ -608,6 +611,46 @@ function App() {
     setNotice(status === 'rejected' ? 'Order declined.' : 'Order updated to ' + (status === 'preparing' ? 'Preparing' : status === 'ready' ? 'Ready for pickup' : 'Collected') + '.')
   }
 
+  async function deleteOrder(id) {
+    const existingOrder = orders.find((order) => order.id === id)
+    if (!existingOrder || existingOrder.status !== 'collected' || deletingOrderId) return
+    const historyScope = supabaseConfigured
+      ? 'from both customer and shopkeeper history, including its update messages'
+      : 'from this browser demo history'
+    const confirmed = window.confirm(
+      'Delete collected order ' + id + '? This permanently removes the order and its item details ' + historyScope + '. This cannot be undone.',
+    )
+    if (!confirmed) return
+
+    setDeletingOrderId(id)
+    try {
+      if (supabaseConfigured) {
+        if (!existingOrder.dbId) throw new Error('Could not identify this order.')
+        await deleteLiveOrder(existingOrder.dbId)
+        setOrders((current) => current.filter((order) => order.id !== id))
+        setCustomerMessages((current) => current.filter((message) => message.order_id !== existingOrder.dbId))
+        if (successOrderId === id) {
+          setSuccessOrderId('')
+          setSuccessOrderSnapshot(null)
+        }
+        setNotice('Order ' + id + ' deleted from customer and shopkeeper history.')
+        void refreshLiveAccount().catch((error) => setLiveError('Order deleted, but account history could not refresh: ' + error.message))
+        return
+      }
+      setOrders((current) => current.filter((order) => order.id !== id))
+      if (successOrderId === id) {
+        setSuccessOrderId('')
+        setSuccessOrderSnapshot(null)
+      }
+      setNotice('Order ' + id + ' deleted from demo history.')
+    } catch (error) {
+      setLiveError(error.message)
+      setNotice('Could not delete order: ' + error.message)
+    } finally {
+      setDeletingOrderId('')
+    }
+  }
+
   async function setRequestedItemRate(orderId, itemId, rate) {
     const parsedRate = Number(rate)
     if (!Number.isFinite(parsedRate) || parsedRate <= 0) return
@@ -671,7 +714,7 @@ function App() {
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
         {view === 'dashboard' ? (
           !supabaseConfigured || profile?.role === 'shopkeeper'
-            ? <Dashboard orders={orders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
+            ? <Dashboard orders={orders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
             : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
         ) : (
           <section className="view customer-page" aria-label="Customer ordering">
@@ -680,6 +723,7 @@ function App() {
               <p className="muted">No app to install. Choose online pre-order or entrance QR ordering.</p>
             </div>
             {supabaseConfigured && authUser && customerMessages.length > 0 && <section className="account-messages" aria-label="Order updates"><div><h2>Your order updates</h2><span>Live messages for this account</span></div><ul>{customerMessages.slice(0, 4).map((message) => <li key={message.id}><span>{message.body}</span><time>{new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(message.created_at))}</time></li>)}</ul></section>}
+            {supabaseConfigured && profile?.role === 'customer' && <CustomerOrderHistory orders={orders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />}
             <div className="order-rules-notice"><strong>Minimum confirmed order: more than ₹200.</strong> Items waiting for a shopkeeper’s price do not count toward this minimum. Orders are scheduled in 15-minute pickup slots based on the queue.</div>
             <div className="custom-request-notice"><strong>Can’t find an item?</strong> Add a request by name and quantity. Its price is not included in the confirmed subtotal; the shopkeeper will set the rate, and you can settle that amount at the shop desk.</div>
             <OrderMode channel={channel} onChange={selectChannel} />

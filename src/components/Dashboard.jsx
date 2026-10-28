@@ -40,7 +40,7 @@ function RequestedItemRate({ order, item, onSetRate }) {
   )
 }
 
-function OrderCard({ order, onUpdate, onSetRequestedItemRate }) {
+function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetRequestedItemRate }) {
   const meta = STATUS_META[order.status] || STATUS_META.pending
   const StatusIcon = meta.icon
   const primaryAction = order.status === 'pending'
@@ -79,14 +79,23 @@ function OrderCard({ order, onUpdate, onSetRequestedItemRate }) {
       </div>
       <div className="order-card-bottom">
         <div><span>{order.payment}</span><strong>{formatMoney(order.total)}</strong>{unpricedCount > 0 && <small className="order-total-note">Confirmed subtotal · {unpricedCount} requested {unpricedCount === 1 ? 'item' : 'items'} awaiting rate</small>}</div>
-        {primaryAction && (
+        {(primaryAction || order.status === 'collected') && (
           <div className="order-actions">
-            {order.status === 'pending' && (
-              <button className="reject-button" type="button" onClick={() => onUpdate(order.id, 'rejected')}><X size={15} /> Decline</button>
+            {primaryAction && (
+              <>
+                {order.status === 'pending' && (
+                  <button className="reject-button" type="button" onClick={() => onUpdate(order.id, 'rejected')}><X size={15} /> Decline</button>
+                )}
+                <button className="advance-button" type="button" onClick={() => onUpdate(order.id, primaryAction.next)}>
+                  <primaryAction.icon size={15} />{primaryAction.label}
+                </button>
+              </>
             )}
-            <button className="advance-button" type="button" onClick={() => onUpdate(order.id, primaryAction.next)}>
-              <primaryAction.icon size={15} />{primaryAction.label}
-            </button>
+            {order.status === 'collected' && (
+              <button className="reject-button" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id}>
+                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Delete order'}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -204,7 +213,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh' }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh' }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const visibleOrders = useMemo(() => {
@@ -256,7 +265,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
           ))}
         </div>
         <div className="order-list">
-          {visibleOrders.length ? visibleOrders.map((order) => <OrderCard key={order.id} order={order} onUpdate={onUpdateOrder} onSetRequestedItemRate={onSetRequestedItemRate} />) : (
+          {visibleOrders.length ? visibleOrders.map((order) => <OrderCard key={order.id} order={order} onUpdate={onUpdateOrder} onDeleteOrder={onDeleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={onSetRequestedItemRate} />) : (
             <div className="no-orders"><span>🌱</span><strong>Nothing in this view right now</strong><p>New customer orders will appear here as soon as they’re placed.</p></div>
           )}
         </div>
