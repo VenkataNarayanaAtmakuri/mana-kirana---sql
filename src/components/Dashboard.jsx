@@ -93,7 +93,7 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
             )}
             {order.status === 'collected' && (
               <button className="reject-button" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id}>
-                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Delete order'}
+                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
               </button>
             )}
           </div>

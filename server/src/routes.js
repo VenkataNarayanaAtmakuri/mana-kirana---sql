@@ -119,8 +119,16 @@ router.delete('/products/:id', requireAuth, requireShopkeeper, async (req, res) 
   res.json(rows[0])
 })
 router.get('/orders', requireAuth, async (req, res) => {
-  const where = req.session.user.role === 'shopkeeper' ? '' : 'WHERE o.customer_id=$1'
-  const params = where ? [req.session.user.id] : []
+  const params = []
+  const conditions = []
+  if (req.session.user.role !== 'shopkeeper') {
+    params.push(req.session.user.id)
+    conditions.push(`o.customer_id=${params.length}`)
+  }
+  const hiddenMarker = '__order_hidden__:' + req.session.user.role + ':' + req.session.user.id
+  params.push(hiddenMarker)
+  conditions.push(`NOT EXISTS (SELECT 1 FROM customer_messages hidden WHERE hidden.order_id=o.id AND hidden.customer_id=o.customer_id AND hidden.body=${params.length})`)
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const { rows } = await pool.query(`SELECT o.*, COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where} GROUP BY o.id ORDER BY o.created_at DESC`, params)
   res.json(rows)
 })
@@ -142,9 +150,14 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
       await client.query('ROLLBACK')
       return res.status(409).json({ error: 'Only collected orders can be deleted.' })
     }
-    const deleted = await client.query('DELETE FROM orders WHERE id=$1 RETURNING id', [order.id])
+    // A hidden marker keeps the order and its item details available to the other account.
+    const hiddenMarker = '__order_hidden__:' + req.session.user.role + ':' + req.session.user.id
+    await client.query(
+      'INSERT INTO customer_messages (customer_id,order_id,body) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM customer_messages WHERE customer_id=$1 AND order_id=$2 AND body=$3)',
+      [order.customer_id, order.id, hiddenMarker],
+    )
     await client.query('COMMIT')
-    res.json({ id: deleted.rows[0].id, deleted: true })
+    res.json({ id: order.id, hidden: true, scope: req.session.user.role })
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
@@ -227,7 +240,20 @@ router.patch('/order-items/:id/price', requireAuth, requireShopkeeper, async (re
   } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
 })
 router.get('/messages', requireAuth, async (req, res) => {
-  const { rows } = await pool.query('SELECT id,body,created_at,order_id FROM customer_messages WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 25', [req.session.user.id])
+  const { rows } = await pool.query(`
+    SELECT message.id,message.body,message.created_at,message.order_id
+    FROM customer_messages message
+    WHERE message.customer_id=$1
+      AND left(message.body,length('__order_hidden__:')) <> '__order_hidden__:'
+      AND NOT EXISTS (
+        SELECT 1 FROM customer_messages hidden
+        WHERE hidden.customer_id=message.customer_id
+          AND hidden.order_id=message.order_id
+          AND hidden.body='__order_hidden__:customer:' || message.customer_id::text
+      )
+    ORDER BY message.created_at DESC
+    LIMIT 25
+  `, [req.session.user.id])
   res.json(rows)
 })
 export default router
