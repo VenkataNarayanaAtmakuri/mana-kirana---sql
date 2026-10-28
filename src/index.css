@@ -1582,3 +1582,22 @@ input:focus, select:focus { border-color: #749a7a; outline: 0; box-shadow: 0 0 0
   .saved-list-draft-items li > label { flex: 1; }
   .saved-list-draft-items input { width: 100%; }
 }
+
+
+/* Keep the light low-stock panel readable when the app uses dark mode */
+.low-stock-panel,
+.low-stock-panel h3,
+.low-stock-panel li strong { color: #17251c; }
+.low-stock-heading p,
+.low-stock-heading label,
+.low-stock-panel .low-stock-clear,
+.low-stock-panel li small { color: #58695d; }
+.low-stock-panel li { border-color: #e2d8c1; }
+.low-stock-panel li > b { color: #a8341b; }
+.low-stock-heading input,
+.daily-sales-section input {
+  color: #17251c !important;
+  -webkit-text-fill-color: #17251c !important;
+  background-color: #ffffff !important;
+  caret-color: #17251c;
+}
