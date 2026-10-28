@@ -102,7 +102,7 @@ router.patch('/profile/:id', profileUpdateLimiter, requireAuth, async (req, res)
 
   try {
     const { rows } = await pool.query(
-      'UPDATE profiles SET full_name=$1,phone=$2 WHERE id=$3 RETURNING id,phone,full_name,role,phone_verified',
+      'UPDATE profiles SET full_name=$1,phone=$2,phone_verified=CASE WHEN phone<>$2 THEN false ELSE phone_verified END WHERE id=$3 RETURNING id,phone,full_name,role,phone_verified',
       [fullName, phone, req.session.user.id],
     )
     if (!rows[0]) return res.status(404).json({ error: 'Profile not found.' })
