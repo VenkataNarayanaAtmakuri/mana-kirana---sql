@@ -40,7 +40,7 @@ function calculateReadyAt(currentOrders) {
   return new Date(Math.max(nextAfterQueue, nextAfterScheduled)).toISOString()
 }
 
-function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, onCustomerSignIn, onShopkeeperSignIn, onSignOut }) {
+function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onSignOut }) {
   return (
     <header className="top">
       <div className="wrap top-inner">
@@ -55,6 +55,7 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, onCu
           <button className="tab" type="button" aria-pressed={view === 'shop'} onClick={() => onViewChange('shop')}>
             Customer{itemCount > 0 && <span className="count">{itemCount}</span>}
           </button>
+          {supabaseConfigured && authUser && profileRole === 'customer' && <button className="tab" type="button" aria-pressed={view === 'orders'} onClick={() => onViewChange('orders')}>My Orders</button>}
           <button className="tab" type="button" aria-pressed={view === 'dashboard'} onClick={() => onViewChange('dashboard')}>
             Shopkeeper{pendingCount > 0 && <span className="count">{pendingCount}</span>}
           </button>
@@ -707,7 +708,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={setView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={setView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
@@ -716,6 +717,16 @@ function App() {
           !supabaseConfigured || profile?.role === 'shopkeeper'
             ? <Dashboard orders={orders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
             : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
+        ) : view === 'orders' ? (
+          <section className="view customer-page customer-order-page" aria-label="Previous orders">
+            <div className="page-heading">
+              <h1>Previous orders</h1>
+              <p className="muted">Review orders placed from this account. Delete buttons are available for collected orders.</p>
+            </div>
+            {profileLoading ? <div className="empty-results"><strong>Loading your orders…</strong></div> : profile?.role === 'customer'
+              ? <CustomerOrderHistory orders={orders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />
+              : <section className="access-gate"><h2>Customer sign-in required</h2><p>Sign in with your customer account to see orders from that account.</p><button className="btn primary" type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in as Customer</button></section>}
+          </section>
         ) : (
           <section className="view customer-page" aria-label="Customer ordering">
             <div className="page-heading">
@@ -723,7 +734,6 @@ function App() {
               <p className="muted">No app to install. Choose online pre-order or entrance QR ordering.</p>
             </div>
             {supabaseConfigured && authUser && customerMessages.length > 0 && <section className="account-messages" aria-label="Order updates"><div><h2>Your order updates</h2><span>Live messages for this account</span></div><ul>{customerMessages.slice(0, 4).map((message) => <li key={message.id}><span>{message.body}</span><time>{new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(message.created_at))}</time></li>)}</ul></section>}
-            {supabaseConfigured && profile?.role === 'customer' && <CustomerOrderHistory orders={orders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />}
             <div className="order-rules-notice"><strong>Minimum confirmed order: more than ₹200.</strong> Items waiting for a shopkeeper’s price do not count toward this minimum. Orders are scheduled in 15-minute pickup slots based on the queue.</div>
             <div className="custom-request-notice"><strong>Can’t find an item?</strong> Add a request by name and quantity. Its price is not included in the confirmed subtotal; the shopkeeper will set the rate, and you can settle that amount at the shop desk.</div>
             <OrderMode channel={channel} onChange={selectChannel} />
