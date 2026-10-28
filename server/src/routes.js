@@ -256,4 +256,17 @@ router.get('/messages', requireAuth, async (req, res) => {
   `, [req.session.user.id])
   res.json(rows)
 })
+router.get('/reports/daily-sales', requireAuth, requireShopkeeper, async (req, res) => {
+  const date = String(req.query.date || '')
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + 'T00:00:00.000Z') : null
+  if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+    return res.status(400).json({ error: 'Choose a valid report date.' })
+  }
+  const dateWindow = `updated_at >= (($1::date)::timestamp AT TIME ZONE 'Asia/Kolkata') AND updated_at < ((($1::date) + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`
+  const [summary, items] = await Promise.all([
+    pool.query(`SELECT COUNT(*)::int AS order_count, COALESCE(SUM(total), 0)::numeric AS total FROM orders WHERE status='collected' AND ${dateWindow}`, [date]),
+    pool.query(`SELECT item.item_name AS name, item.unit, SUM(item.quantity)::numeric AS quantity, SUM(item.line_total)::numeric AS total FROM orders order_row JOIN order_items item ON item.order_id=order_row.id WHERE order_row.status='collected' AND ${dateWindow.replaceAll('updated_at', 'order_row.updated_at')} AND item.custom_request=false AND item.price_confirmed=true GROUP BY item.item_name,item.unit ORDER BY SUM(item.line_total) DESC NULLS LAST LIMIT 5`, [date]),
+  ])
+  res.json({ date, orderCount: Number(summary.rows[0]?.order_count || 0), total: Number(summary.rows[0]?.total || 0), topItems: items.rows.map((item) => ({ ...item, quantity: Number(item.quantity), total: Number(item.total) })) })
+})
 export default router
