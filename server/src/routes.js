@@ -123,11 +123,11 @@ router.get('/orders', requireAuth, async (req, res) => {
   const conditions = []
   if (req.session.user.role !== 'shopkeeper') {
     params.push(req.session.user.id)
-    conditions.push(`o.customer_id=${params.length}`)
+    conditions.push('o.customer_id=$' + params.length)
   }
   const hiddenMarker = '__order_hidden__:' + req.session.user.role + ':' + req.session.user.id
   params.push(hiddenMarker)
-  conditions.push(`NOT EXISTS (SELECT 1 FROM customer_messages hidden WHERE hidden.order_id=o.id AND hidden.customer_id=o.customer_id AND hidden.body=${params.length})`)
+  conditions.push('NOT EXISTS (SELECT 1 FROM customer_messages hidden WHERE hidden.order_id=o.id AND hidden.customer_id=o.customer_id AND hidden.body=$' + params.length + ')')
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const { rows } = await pool.query(`SELECT o.*, COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where} GROUP BY o.id ORDER BY o.created_at DESC`, params)
   res.json(rows)
