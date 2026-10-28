@@ -11,7 +11,7 @@ import {
   archiveLiveProduct,
   createLiveCategory,
   createLiveProduct,
-  deleteLiveOrder,
+  hideLiveOrder,
   fetchCustomerMessages,
   fetchLiveCatalog,
   fetchLiveOrders,
@@ -28,6 +28,20 @@ import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
 function getInitialChannel() {
   const requested = new URLSearchParams(window.location.search).get('mode')
   return requested === 'entrance' ? requested : 'online'
+}
+
+const DEMO_HIDDEN_ORDER_KEY = 'mana-kirana-hidden-orders-v1'
+
+function readDemoHiddenOrders() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEMO_HIDDEN_ORDER_KEY) || '{}')
+    return {
+      customer: Array.isArray(saved.customer) ? saved.customer : [],
+      shopkeeper: Array.isArray(saved.shopkeeper) ? saved.shopkeeper : [],
+    }
+  } catch {
+    return { customer: [], shopkeeper: [] }
+  }
 }
 
 function calculateReadyAt(currentOrders) {
@@ -152,15 +166,17 @@ function App() {
   const [mobileCartOpen, setMobileCartOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [deletingOrderId, setDeletingOrderId] = useState('')
+  const [demoHiddenOrders, setDemoHiddenOrders] = useState(readDemoHiddenOrders)
 
   useEffect(() => {
     if (supabaseConfigured) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, orders, products, categories: customCategories }))
+      localStorage.setItem(DEMO_HIDDEN_ORDER_KEY, JSON.stringify(demoHiddenOrders))
     } catch {
       // The app remains usable if browser storage is unavailable.
     }
-  }, [orders, products, customCategories])
+  }, [orders, products, customCategories, demoHiddenOrders])
 
   useEffect(() => {
     if (!supabaseConfigured) return undefined
@@ -322,7 +338,13 @@ function App() {
     : [...new Set([...catalogCategories, ...customCategories])], [catalogCategories, customCategories, remoteCategories])
   const cartItems = useMemo(() => products.filter((product) => cart[product.id] > 0).map((product) => ({ ...product, quantity: cart[product.id] })), [cart, products])
   const itemCount = cartItems.length + customItems.length
-  const pendingCount = orders.filter((order) => order.status === 'pending').length
+  const orderViewRole = supabaseConfigured ? profile?.role : (view === 'dashboard' ? 'shopkeeper' : 'customer')
+  const visibleOrders = useMemo(() => {
+    if (supabaseConfigured) return orders
+    const hiddenIds = new Set(demoHiddenOrders[orderViewRole] || [])
+    return orders.filter((order) => !hiddenIds.has(order.id))
+  }, [orders, demoHiddenOrders, orderViewRole])
+  const pendingCount = visibleOrders.filter((order) => order.status === 'pending').length
   const cartTotal = Math.round(cartItems.reduce((total, item) => total + item.price * item.quantity, 0) * 100) / 100
   const successOrder = successOrderId ? orders.find((order) => order.id === successOrderId) || (successOrderSnapshot?.id === successOrderId ? successOrderSnapshot : null) : null
   const visibleProducts = useMemo(() => products.filter((product) => {
@@ -614,12 +636,11 @@ function App() {
 
   async function deleteOrder(id) {
     const existingOrder = orders.find((order) => order.id === id)
-    if (!existingOrder || existingOrder.status !== 'collected' || deletingOrderId) return
-    const historyScope = supabaseConfigured
-      ? 'from both customer and shopkeeper history, including its update messages'
-      : 'from this browser demo history'
+    const actorRole = supabaseConfigured ? profile?.role : (view === 'dashboard' ? 'shopkeeper' : 'customer')
+    if (!existingOrder || existingOrder.status !== 'collected' || deletingOrderId || !['customer', 'shopkeeper'].includes(actorRole)) return
+    const otherSide = actorRole === 'customer' ? 'shopkeeper' : 'customer'
     const confirmed = window.confirm(
-      'Delete collected order ' + id + '? This permanently removes the order and its item details ' + historyScope + '. This cannot be undone.',
+      'Remove collected order ' + id + ' from your ' + actorRole + ' history? It will remain visible in the ' + otherSide + ' history. The order and its item details will not be deleted.',
     )
     if (!confirmed) return
 
@@ -627,26 +648,31 @@ function App() {
     try {
       if (supabaseConfigured) {
         if (!existingOrder.dbId) throw new Error('Could not identify this order.')
-        await deleteLiveOrder(existingOrder.dbId)
+        await hideLiveOrder(existingOrder.dbId)
         setOrders((current) => current.filter((order) => order.id !== id))
-        setCustomerMessages((current) => current.filter((message) => message.order_id !== existingOrder.dbId))
+        if (actorRole === 'customer') {
+          setCustomerMessages((current) => current.filter((message) => message.order_id !== existingOrder.dbId))
+        }
         if (successOrderId === id) {
           setSuccessOrderId('')
           setSuccessOrderSnapshot(null)
         }
-        setNotice('Order ' + id + ' deleted from customer and shopkeeper history.')
-        void refreshLiveAccount().catch((error) => setLiveError('Order deleted, but account history could not refresh: ' + error.message))
+        setNotice('Order ' + id + ' removed from your ' + actorRole + ' history. It remains in the ' + otherSide + ' history.')
+        void refreshLiveAccount().catch((error) => setLiveError('History updated, but account data could not refresh: ' + error.message))
         return
       }
-      setOrders((current) => current.filter((order) => order.id !== id))
+      setDemoHiddenOrders((current) => ({
+        ...current,
+        [actorRole]: [...new Set([...(current[actorRole] || []), existingOrder.id])],
+      }))
       if (successOrderId === id) {
         setSuccessOrderId('')
         setSuccessOrderSnapshot(null)
       }
-      setNotice('Order ' + id + ' deleted from demo history.')
+      setNotice('Order ' + id + ' removed from your ' + actorRole + ' history. It remains in the ' + otherSide + ' history.')
     } catch (error) {
       setLiveError(error.message)
-      setNotice('Could not delete order: ' + error.message)
+      setNotice('Could not update your order history: ' + error.message)
     } finally {
       setDeletingOrderId('')
     }
@@ -715,7 +741,7 @@ function App() {
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
         {view === 'dashboard' ? (
           !supabaseConfigured || profile?.role === 'shopkeeper'
-            ? <Dashboard orders={orders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
+            ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
             : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
         ) : view === 'orders' ? (
           <section className="view customer-page customer-order-page" aria-label="Previous orders">
@@ -724,7 +750,7 @@ function App() {
               <p className="muted">Review orders placed from this account. Delete buttons are available for collected orders.</p>
             </div>
             {profileLoading ? <div className="empty-results"><strong>Loading your orders…</strong></div> : profile?.role === 'customer'
-              ? <CustomerOrderHistory orders={orders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />
+              ? <CustomerOrderHistory orders={visibleOrders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />
               : <section className="access-gate"><h2>Customer sign-in required</h2><p>Sign in with your customer account to see orders from that account.</p><button className="btn primary" type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in as Customer</button></section>}
           </section>
         ) : (
