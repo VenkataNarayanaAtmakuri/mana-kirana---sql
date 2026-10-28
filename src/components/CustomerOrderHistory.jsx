@@ -34,8 +34,8 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                   <strong>{formatMoney(order.total)}</strong>
                 </div>
                 {order.status === 'collected' && (
-                  <button className="customer-order-delete" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id} aria-label={'Delete collected order ' + order.id}>
-                    <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Delete order'}
+                  <button className="customer-order-delete" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id} aria-label={'Remove collected order ' + order.id + ' from customer history'}>
+                    <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
                   </button>
                 )}
               </li>
@@ -45,7 +45,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
       ) : (
         <p className="customer-order-empty">Orders you place will appear here.</p>
       )}
-      <p className="customer-order-note">Delete is available after collection. Removing an order also removes its item details and updates from both views.</p>
+      <p className="customer-order-note">Delete is available after collection. Removing an order from your history keeps it in the other side’s history.</p>
     </section>
   )
 }
