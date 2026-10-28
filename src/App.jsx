@@ -28,6 +28,19 @@ import {
 } from './lib/liveData.js'
 import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
 
+function getInitialView() {
+  const pathname = typeof window === 'undefined' ? '/' : window.location.pathname.replace(/\/+$/, '') || '/'
+  if (pathname === '/shopkeeper') return 'dashboard'
+  if (pathname === '/orders' || pathname === '/my-orders') return 'orders'
+  return 'shop'
+}
+
+function viewPath(view) {
+  if (view === 'dashboard') return '/shopkeeper'
+  if (view === 'orders') return '/orders'
+  return '/'
+}
+
 function getInitialChannel() {
   const requested = new URLSearchParams(window.location.search).get('mode')
   return requested === 'entrance' ? requested : 'online'
@@ -138,7 +151,7 @@ function UnlistedItemForm({ onAdd }) {
 }
 
 function App() {
-  const [view, setView] = useState('shop')
+  const [view, setView] = useState(getInitialView)
   const [channel, setChannel] = useState(getInitialChannel)
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
@@ -174,6 +187,22 @@ function App() {
   const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
   const notificationEnabledRef = useRef(false)
   const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
+
+  function selectView(nextView) {
+    setView(nextView)
+    const nextPath = viewPath(nextView)
+    if (window.location.pathname !== nextPath) {
+      const nextUrl = new URL(window.location.href)
+      nextUrl.pathname = nextPath
+      window.history.pushState({ manaKiranaView: nextView }, '', nextUrl.pathname + nextUrl.search + nextUrl.hash)
+    }
+  }
+
+  useEffect(() => {
+    const handlePopState = () => setView(getInitialView())
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     if (supabaseConfigured) return
@@ -246,7 +275,7 @@ function App() {
       }
 
       setShowSignOutDialog(false)
-      setView('shop')
+      selectView('shop')
       setProfile(null)
       setOrders([])
       setCustomerMessages([])
@@ -464,7 +493,7 @@ function App() {
       if (quantity + 0.001 < requested) skipped += 1
     }
     setCart(nextCart)
-    setView('shop')
+    selectView('shop')
     setSuccessOrderId('')
     setNotice(added ? added + ' saved item' + (added === 1 ? '' : 's') + ' added at today’s prices.' + (skipped ? ' Some unavailable quantities were skipped.' : '') : 'Those saved items are no longer available.')
   }
@@ -489,7 +518,7 @@ function App() {
       if (quantity + 0.001 < requested) skipped += 1
     }
     setCart(nextCart)
-    setView('shop')
+    selectView('shop')
     setSuccessOrderId('')
     setNotice(added ? 'Previous order added to your basket at current prices.' + (skipped ? ' Some items or quantities were unavailable.' : '') : 'No items from this order are currently available.')
   }
@@ -858,7 +887,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={setView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
