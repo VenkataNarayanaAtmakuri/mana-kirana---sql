@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { RotateCcw, Trash2 } from 'lucide-react'
 import { formatMoney, formatQuantity, formatReadyTime } from '../data.js'
 
 const ORDER_STATUS = {
@@ -9,7 +9,7 @@ const ORDER_STATUS = {
   rejected: { label: 'Declined', className: 'rejected' },
 }
 
-export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOrderId }) {
+export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOrderId, onReorderOrder }) {
   const sortedOrders = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   return (
@@ -34,9 +34,14 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                   <strong>{formatMoney(order.total)}</strong>
                 </div>
                 {order.status === 'collected' && (
-                  <button className="customer-order-delete" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id} aria-label={'Remove collected order ' + order.id + ' from customer history'}>
+                  <div className="customer-order-actions">
+                    <button className="customer-order-reorder" type="button" onClick={() => onReorderOrder(order)} aria-label={'Reorder ' + order.id}>
+                      <RotateCcw size={15} />Order again
+                    </button>
+                    <button className="customer-order-delete" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id} aria-label={'Remove collected order ' + order.id + ' from customer history'}>
                     <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
-                  </button>
+                    </button>
+                  </div>
                 )}
               </li>
             )

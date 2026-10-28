@@ -14,11 +14,12 @@ export async function fetchLiveOrders() {
     id: orderLabel(row.order_number), dbId: row.id, name: row.customer_name,
     phone: row.customer_phone ? '••••• ' + row.customer_phone.replace(/\D/g, '').slice(-4) : '', channel: row.channel, status: row.status,
     payment: row.payment_method === 'upi_demo' ? 'UPI · demo only' : 'Pay at pickup', total: Number(row.total), createdAt: row.created_at,
-    estimatedReadyAt: row.estimated_ready_at, sample: false, stockDeducted: true,
+    estimatedReadyAt: row.estimated_ready_at, updatedAt: row.updated_at, sample: false, stockDeducted: true,
     items: (row.items || []).map((item) => ({ id: item.id, productId: item.product_id || item.id, name: item.item_name, emoji: item.emoji || (item.custom_request ? '📝' : '🛍️'), quantity: Number(item.quantity), unit: item.unit, price: item.price == null ? null : Number(item.price), lineTotal: item.line_total == null ? null : Number(item.line_total), custom: item.custom_request, priced: item.price_confirmed })),
   }))
 }
 export async function fetchCustomerMessages() { return request('/api/messages') }
+export async function fetchDailySales(date) { return request('/api/reports/daily-sales?date=' + encodeURIComponent(date)) }
 export async function fetchProfile(userId) { return request('/api/profile/' + encodeURIComponent(userId)) }
 export async function createLiveCategory(name) { return request('/api/categories', { method: 'POST', body: JSON.stringify({ name }) }) }
 export async function archiveLiveCategory(categoryId) { return request('/api/categories/' + categoryId, { method: 'DELETE' }) }

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, CircleHelp } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
 import CustomerOrderHistory from './components/CustomerOrderHistory.jsx'
+import OrderNotificationControl from './components/OrderNotificationControl.jsx'
+import SavedShoppingLists from './components/SavedShoppingLists.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import ProductCard from './components/ProductCard.jsx'
 import { formatMoney, formatReadyTime, makeSampleOrders, MINIMUM_ORDER_VALUE, orderChannelLabel, PICKUP_SLOT_MINUTES, readCategories, readOrders, readProducts, STORAGE_KEY } from './data.js'
@@ -13,6 +15,7 @@ import {
   createLiveProduct,
   hideLiveOrder,
   fetchCustomerMessages,
+  fetchDailySales,
   fetchLiveCatalog,
   fetchLiveOrders,
   fetchProfile,
@@ -167,6 +170,10 @@ function App() {
   const [notice, setNotice] = useState('')
   const [deletingOrderId, setDeletingOrderId] = useState('')
   const [demoHiddenOrders, setDemoHiddenOrders] = useState(readDemoHiddenOrders)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
+  const notificationEnabledRef = useRef(false)
+  const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
 
   useEffect(() => {
     if (supabaseConfigured) return
@@ -302,15 +309,48 @@ function App() {
   }, [refreshLiveCatalog])
 
   useEffect(() => {
-    if (!supabaseConfigured || !authUser) return undefined
+    notificationEnabledRef.current = notificationsEnabled
+  }, [notificationsEnabled])
+
+  useEffect(() => {
+    if (!authUser || !profile?.role) {
+      setNotificationsEnabled(false)
+      notificationEnabledRef.current = false
+      return
+    }
+    const key = 'mana-kirana-order-alerts:v1:' + authUser.id + ':' + profile.role
+    let enabled = false
+    try { enabled = localStorage.getItem(key) === 'enabled' } catch { enabled = false }
+    const granted = typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted'
+    setNotificationsEnabled(enabled && granted)
+    notificationEnabledRef.current = enabled && granted
+  }, [authUser?.id, profile?.role])
+
+  useEffect(() => {
+    if (!supabaseConfigured || !authUser || !profile?.role) return undefined
     let active = true
+    let baseline = null
     const loadAccount = async () => {
       try {
         const [nextOrders, nextMessages] = await Promise.all([fetchLiveOrders(), fetchCustomerMessages()])
-        if (active) {
-          setOrders(nextOrders)
-          setCustomerMessages(nextMessages)
+        if (!active) return
+        if (baseline && notificationEnabledRef.current && typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+          if (profile.role === 'shopkeeper') {
+            const previousOrderIds = new Set(baseline.orders)
+            const newOrder = nextOrders.find((order) => order.status === 'pending' && !previousOrderIds.has(order.dbId || order.id))
+            if (newOrder) showOrderNotification('New customer order', newOrder.id + ' from ' + newOrder.name)
+          } else {
+            const previousMessageIds = new Set(baseline.messages)
+            const newMessage = nextMessages.find((message) => !previousMessageIds.has(message.id))
+            if (newMessage) showOrderNotification('Order update', newMessage.body)
+          }
         }
+        baseline = {
+          orders: nextOrders.map((order) => order.dbId || order.id),
+          messages: nextMessages.map((message) => message.id),
+        }
+        setOrders(nextOrders)
+        setCustomerMessages(nextMessages)
       } catch (error) {
         if (active) setLiveError('Could not load account updates: ' + error.message)
       }
@@ -324,13 +364,49 @@ function App() {
       }
     })
     return () => { active = false; unsubscribe() }
-  }, [authUser])
+  }, [authUser, profile?.role])
 
   useEffect(() => {
     if (!notice) return undefined
     const timeout = window.setTimeout(() => setNotice(''), 3200)
     return () => window.clearTimeout(timeout)
   }, [notice])
+
+  function showOrderNotification(title, body) {
+    if (!notificationEnabledRef.current || typeof window === 'undefined' || !('Notification' in window) || window.Notification.permission !== 'granted') return
+    try {
+      const notification = new window.Notification(title, { body, tag: 'mana-kirana-order-update' })
+      notification.onclick = () => window.focus()
+    } catch {
+      // Browser notifications are optional; the in-app order history remains available.
+    }
+  }
+
+  async function toggleOrderNotifications() {
+    if (!authUser || !profile?.role || typeof window === 'undefined' || !('Notification' in window)) {
+      setNotice('Browser notifications are not available in this browser.')
+      return
+    }
+    const key = 'mana-kirana-order-alerts:v1:' + authUser.id + ':' + profile.role
+    if (notificationsEnabled) {
+      try { localStorage.removeItem(key) } catch { /* Keep the in-app experience available if storage is blocked. */ }
+      notificationEnabledRef.current = false
+      setNotificationsEnabled(false)
+      setNotice('Browser order alerts disabled.')
+      return
+    }
+    let permission = window.Notification.permission
+    if (permission === 'default') permission = await window.Notification.requestPermission()
+    setNotificationPermission(permission)
+    if (permission !== 'granted') {
+      setNotice(permission === 'denied' ? 'Allow notifications for this site in your browser settings to enable alerts.' : 'Notification permission was not granted.')
+      return
+    }
+    try { localStorage.setItem(key, 'enabled') } catch { /* The setting applies for this open session. */ }
+    notificationEnabledRef.current = true
+    setNotificationsEnabled(true)
+    setNotice('Browser order alerts enabled while Mana Kirana is open.')
+  }
 
   const catalogCategories = useMemo(() => [...new Set(products.map((product) => product.category))], [products])
   const categories = useMemo(() => supabaseConfigured
@@ -368,6 +444,54 @@ function App() {
       return next
     })
     setSuccessOrderId('')
+  }
+
+  function addSavedItemsToCart(savedItems) {
+    const nextCart = { ...cart }
+    let added = 0
+    let skipped = 0
+    for (const savedItem of savedItems) {
+      const product = products.find((item) => item.id === savedItem.productId)
+      if (!product) { skipped += 1; continue }
+      const requested = Number(savedItem.quantity) || 0
+      const alreadyInCart = Number(nextCart[product.id]) || 0
+      const available = Math.max(0, product.stock - alreadyInCart)
+      const precision = product.unit === 'kg' ? 100 : 1
+      const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
+      if (quantity <= 0) { skipped += 1; continue }
+      nextCart[product.id] = Math.round((alreadyInCart + quantity) * 100) / 100
+      added += 1
+      if (quantity + 0.001 < requested) skipped += 1
+    }
+    setCart(nextCart)
+    setView('shop')
+    setSuccessOrderId('')
+    setNotice(added ? added + ' saved item' + (added === 1 ? '' : 's') + ' added at today’s prices.' + (skipped ? ' Some unavailable quantities were skipped.' : '') : 'Those saved items are no longer available.')
+  }
+
+  function reorderCollectedOrder(order) {
+    if (order.status !== 'collected') return
+    const nextCart = { ...cart }
+    let added = 0
+    let skipped = 0
+    for (const item of order.items || []) {
+      if (item.custom || !item.productId) { skipped += 1; continue }
+      const product = products.find((entry) => entry.id === item.productId)
+      if (!product) { skipped += 1; continue }
+      const requested = Number(item.quantity) || 0
+      const inCart = Number(nextCart[product.id]) || 0
+      const available = Math.max(0, product.stock - inCart)
+      const precision = product.unit === 'kg' ? 100 : 1
+      const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
+      if (quantity <= 0) { skipped += 1; continue }
+      nextCart[product.id] = Math.round((inCart + quantity) * 100) / 100
+      added += 1
+      if (quantity + 0.001 < requested) skipped += 1
+    }
+    setCart(nextCart)
+    setView('shop')
+    setSuccessOrderId('')
+    setNotice(added ? 'Previous order added to your basket at current prices.' + (skipped ? ' Some items or quantities were unavailable.' : '') : 'No items from this order are currently available.')
   }
 
   function changeFromCart(productId, quantity) {
@@ -630,7 +754,7 @@ function App() {
         return returnedItem ? { ...product, stock: Math.round((product.stock + returnedItem.quantity) * 100) / 100 } : product
       }))
     }
-    setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order))
+    setOrders((current) => current.map((order) => order.id === id ? { ...order, status, updatedAt: new Date().toISOString() } : order))
     setNotice(status === 'rejected' ? 'Order declined.' : 'Order updated to ' + (status === 'preparing' ? 'Preparing' : status === 'ready' ? 'Ready for pickup' : 'Collected') + '.')
   }
 
@@ -741,7 +865,7 @@ function App() {
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
         {view === 'dashboard' ? (
           !supabaseConfigured || profile?.role === 'shopkeeper'
-            ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} />
+            ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
             : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
         ) : view === 'orders' ? (
           <section className="view customer-page customer-order-page" aria-label="Previous orders">
@@ -750,7 +874,7 @@ function App() {
               <p className="muted">Review orders placed from this account. Delete buttons are available for collected orders.</p>
             </div>
             {profileLoading ? <div className="empty-results"><strong>Loading your orders…</strong></div> : profile?.role === 'customer'
-              ? <CustomerOrderHistory orders={visibleOrders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} />
+              ? <CustomerOrderHistory orders={visibleOrders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onReorderOrder={reorderCollectedOrder} />
               : <section className="access-gate"><h2>Customer sign-in required</h2><p>Sign in with your customer account to see orders from that account.</p><button className="btn primary" type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in as Customer</button></section>}
           </section>
         ) : (
@@ -763,6 +887,8 @@ function App() {
             <div className="order-rules-notice"><strong>Minimum confirmed order: more than ₹200.</strong> Items waiting for a shopkeeper’s price do not count toward this minimum. Orders are scheduled in 15-minute pickup slots based on the queue.</div>
             <div className="custom-request-notice"><strong>Can’t find an item?</strong> Add a request by name and quantity. Its price is not included in the confirmed subtotal; the shopkeeper will set the rate, and you can settle that amount at the shop desk.</div>
             <OrderMode channel={channel} onChange={selectChannel} />
+            <SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} onLoadItems={addSavedItemsToCart} />
+            {supabaseConfigured && authUser && profile?.role === 'customer' && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
             {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Want to place an order?</strong> Sign in with your mobile number and password, then enter that same number at checkout. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Customer Sign In</button></p>}
             {liveLoading && products.length === 0 ? <div className="empty-results"><strong>Loading the shared catalogue…</strong></div> : <div className="shop-layout" id="shop-products">
               <section className="catalog-section" aria-label="Products">

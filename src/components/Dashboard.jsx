@@ -1,5 +1,6 @@
 import { ArrowDownToLine, Check, CheckCircle2, Clock3, ClipboardList, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import OrderNotificationControl from './OrderNotificationControl.jsx'
 import { formatMoney, formatQuantity, formatReadyTime, orderChannelLabel } from '../data.js'
 
 const FILTERS = [
@@ -191,6 +192,86 @@ function AddProductForm({ categories, onAddProduct }) {
   )
 }
 
+function readLowStockThreshold() {
+  try {
+    const saved = Number(window.localStorage.getItem('mana-kirana-low-stock-threshold:v1'))
+    return Number.isFinite(saved) && saved >= 0 && saved <= 10000 ? saved : 5
+  } catch {
+    return 5
+  }
+}
+
+function LowStockAlerts({ products }) {
+  const [threshold, setThreshold] = useState(readLowStockThreshold)
+  const lowStock = useMemo(() => products.filter((product) => Number(product.stock) <= threshold).sort((a, b) => a.stock - b.stock), [products, threshold])
+
+  useEffect(() => {
+    try { window.localStorage.setItem('mana-kirana-low-stock-threshold:v1', String(threshold)) } catch { /* The alert still works for this session. */ }
+  }, [threshold])
+
+  return (
+    <section className="low-stock-panel" aria-label="Low-stock alerts">
+      <div className="low-stock-heading"><div><h3>Low-stock alerts <span>{lowStock.length}</span></h3><p>Items at or below their selling-unit alert level.</p></div><label>Alert at or below<input aria-label="Low stock threshold" type="number" min="0" max="10000" step="0.5" value={threshold} onChange={(event) => setThreshold(Math.max(0, Number(event.target.value) || 0))} /></label></div>
+      {lowStock.length ? <ul>{lowStock.map((product) => <li key={product.id}><span><strong>{product.name}</strong>{product.local && <small lang="te">{product.local}</small>}</span><b>{formatQuantity(product.stock, product.unit)} left</b></li>)}</ul> : <p className="low-stock-clear">All catalogue items are above the alert level.</p>}
+    </section>
+  )
+}
+
+function indiaDate(value) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date)
+  const part = (type) => parts.find((item) => item.type === type)?.value || ''
+  return part('year') + '-' + part('month') + '-' + part('day')
+}
+
+function makeDemoSalesReport(orders, date) {
+  const collected = orders.filter((order) => order.status === 'collected' && indiaDate(order.updatedAt || order.createdAt) === date)
+  const itemTotals = new Map()
+  for (const order of collected) {
+    for (const item of order.items || []) {
+      if (item.custom || item.lineTotal == null) continue
+      const key = item.name + '|' + item.unit
+      const current = itemTotals.get(key) || { name: item.name, unit: item.unit, quantity: 0, total: 0 }
+      current.quantity += Number(item.quantity) || 0
+      current.total += Number(item.lineTotal) || 0
+      itemTotals.set(key, current)
+    }
+  }
+  return { date, orderCount: collected.length, total: collected.reduce((sum, order) => sum + (Number(order.total) || 0), 0), topItems: [...itemTotals.values()].sort((a, b) => b.total - a.total).slice(0, 5) }
+}
+
+function DailySalesPanel({ orders, liveMode, onLoadDailySales }) {
+  const [date, setDate] = useState(() => indiaDate(new Date()))
+  const [report, setReport] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const demoReport = useMemo(() => makeDemoSalesReport(orders, date), [orders, date])
+
+  useEffect(() => {
+    if (!liveMode) { setReport(null); setError(''); setLoading(false); return undefined }
+    let active = true
+    setLoading(true)
+    setError('')
+    onLoadDailySales(date).then((result) => { if (active) setReport(result) }).catch((loadError) => { if (active) setError(loadError.message || 'Could not load sales for this date.') }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [date, liveMode, onLoadDailySales])
+
+  const visibleReport = liveMode ? report : demoReport
+  return (
+    <section className="daily-sales-section" aria-label="Daily sales summary">
+      <div className="orders-section-heading"><div><h2>Daily sales</h2><span>Orders marked collected on the selected date · India time</span></div><label htmlFor="daily-sales-date">Report date<input id="daily-sales-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label></div>
+      {loading && <p className="daily-sales-status">Loading the sales summary…</p>}
+      {error && <p className="daily-sales-error" role="alert">{error}</p>}
+      {!loading && !error && visibleReport && <>
+        <div className="daily-sales-stats"><article><span>Collected orders</span><strong>{visibleReport.orderCount}</strong></article><article><span>Sales total</span><strong>{formatMoney(visibleReport.total)}</strong></article></div>
+        <div className="daily-sales-items"><h3>Top items</h3>{visibleReport.topItems?.length ? <ul>{visibleReport.topItems.map((item) => <li key={item.name + item.unit}><span>{item.name}</span><span>{formatQuantity(item.quantity, item.unit)} · {formatMoney(item.total)}</span></li>)}</ul> : <p>No collected item sales for this date.</p>}</div>
+      </>}
+      <p className="daily-sales-note">This summary uses the date an order was marked collected. Sample dashboard totals are calculated in this browser.</p>
+    </section>
+  )
+}
+
 function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -213,7 +294,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh' }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const visibleOrders = useMemo(() => {
@@ -242,6 +323,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
       </div>
 
       <div className={`demo-banner ${liveMode ? 'live-banner' : ''}`}><span className="demo-banner-icon">✳</span><div><strong>{liveMode ? 'Live shopkeeper dashboard' : 'Demo dashboard'}</strong><span>{liveMode ? 'Orders, catalogue changes, and status messages are shared across signed-in devices.' : 'These sample orders are here to show the workflow. New customer orders appear in this same queue and stay in this browser.'}</span></div></div>
+      {liveMode && <OrderNotificationControl enabled={notificationEnabled} permission={notificationPermission} onToggle={onToggleNotifications} />}
 
       <div className="dashboard-stats" aria-label="Order summary">
         <div className="stat-card stat-pending"><div className="stat-icon"><ClipboardList size={19} /></div><span>Needs action</span><strong>{pending}</strong><small>new orders</small></div>
@@ -252,6 +334,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
 
       <div className="dashboard-tabs" role="group" aria-label="Shopkeeper sections">
         <button type="button" aria-pressed={section === 'orders'} className={section === 'orders' ? 'active' : ''} onClick={() => setSection('orders')}>Orders <span>{orders.length}</span></button>
+        <button type="button" aria-pressed={section === 'sales'} className={section === 'sales' ? 'active' : ''} onClick={() => setSection('sales')}>Daily sales</button>
         <button type="button" aria-pressed={section === 'inventory'} className={section === 'inventory' ? 'active' : ''} onClick={() => setSection('inventory')}>Stock and prices <span>{products.length}</span></button>
       </div>
 
@@ -269,8 +352,9 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
             <div className="no-orders"><span>🌱</span><strong>Nothing in this view right now</strong><p>New customer orders will appear here as soon as they’re placed.</p></div>
           )}
         </div>
-      </section> : <section className="inventory-section">
+      </section> : section === 'sales' ? <DailySalesPanel orders={orders} liveMode={liveMode} onLoadDailySales={onLoadDailySales} /> : <section className="inventory-section">
         <div className="orders-section-heading"><div><h2>Stock and prices</h2><span>Changes update the customer catalogue and new bills.</span></div><span className="live-indicator"><i />{liveMode ? 'Shared catalogue' : 'Saved in this browser'}</span></div>
+        <LowStockAlerts products={products} />
         <CategoryManager categories={categories} onAddCategory={onAddCategory} onRemoveCategory={onRemoveCategory} />
         <AddProductForm categories={categories} onAddProduct={onAddProduct} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
