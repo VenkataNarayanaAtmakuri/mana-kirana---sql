@@ -13,8 +13,9 @@ export default function CartPanel({
   onNameChange,
   phone,
   onPhoneChange,
-  phoneConfirm,
-  onPhoneConfirmChange,
+  accountPhone = '',
+  alternatePickupPhone = '',
+  onAlternatePickupPhoneChange,
   payment,
   onPaymentChange,
   onSubmit,
@@ -101,11 +102,26 @@ export default function CartPanel({
           <form className="checkout-form" onSubmit={onSubmit}>
             <label className="field-label" htmlFor="customer-name">Name for pickup</label>
             <input id="customer-name" autoComplete="name" value={customerName} onChange={(event) => onNameChange(event.target.value)} placeholder="e.g. Ananya Reddy" required />
-            <label className="field-label" htmlFor="customer-phone">Mobile number</label>
-            <input id="customer-phone" type="tel" inputMode="numeric" autoComplete="tel-national" value={phone} onChange={(event) => onPhoneChange(event.target.value)} placeholder="10-digit number" pattern="[0-9+() -]{10,16}" required />
-            <label className="field-label" htmlFor="customer-phone-confirm">Re-enter mobile number to confirm</label>
-            <input id="customer-phone-confirm" type="tel" inputMode="numeric" autoComplete="off" value={phoneConfirm} onChange={(event) => onPhoneConfirmChange(event.target.value)} placeholder="Enter the same 10-digit number" pattern="[0-9+() -]{10,16}" required />
-            {phoneConfirm && phone.replace(/\D/g, '') !== phoneConfirm.replace(/\D/g, '') && <p className="field-error" role="alert">Mobile numbers do not match.</p>}
+            {liveMode ? (
+              <>
+                <p className="field-label">Required account mobile number</p>
+                <div className="checkout-account-phone" role="group" aria-label="Required account mobile number">
+                  <strong>{accountPhone || 'Sign in to continue'}</strong>
+                  <span>{accountPhone ? 'Filled from your signed-in account' : 'Your account number is required to place an order.'}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <label className="field-label" htmlFor="customer-phone">Mobile number</label>
+                <input id="customer-phone" type="tel" inputMode="numeric" autoComplete="tel-national" value={phone} onChange={(event) => onPhoneChange(event.target.value)} placeholder="10-digit number" pattern="[6-9][0-9]{9}" maxLength={10} required />
+              </>
+            )}
+            <label className="field-label" htmlFor="alternate-pickup-phone">Alternate pickup number <span className="optional-label">optional</span></label>
+            <div className="checkout-phone-entry">
+              <span aria-hidden="true">+91</span>
+              <input id="alternate-pickup-phone" type="tel" inputMode="numeric" autoComplete="off" value={alternatePickupPhone} onChange={(event) => onAlternatePickupPhoneChange(event.target.value)} placeholder="10-digit number" pattern="[6-9][0-9]{9}" maxLength={10} title="Enter a valid 10-digit Indian mobile number" aria-describedby="alternate-pickup-hint" />
+            </div>
+            <p className="checkout-phone-hint" id="alternate-pickup-hint">Add this if someone else may collect the order. The shopkeeper can see both numbers.</p>
             <fieldset className="payment-options">
               <legend className="field-label">Payment <span>demo only</span></legend>
               <label className={`payment-option ${payment === 'pickup' ? 'selected' : ''}`}>
@@ -125,7 +141,7 @@ export default function CartPanel({
           </form>
         </>
       )}
-      <div className="persistence-note"><span>ⓘ</span> {liveMode ? 'Orders sync to your account across devices. Phone verification is required to place an order.' : 'Demo orders stay in this browser only. They are not shared across devices.'}</div>
+      <div className="persistence-note"><span>ⓘ</span> {liveMode ? 'Your account number is the required order contact. Add an alternate pickup number only if needed.' : 'Demo orders stay in this browser only. They are not shared across devices.'}</div>
     </section>
   )
 }
