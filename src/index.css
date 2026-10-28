@@ -650,7 +650,7 @@ input:focus, select:focus { border-color: #749a7a; outline: 0; box-shadow: 0 0 0
 
 .field-label { margin: 5px 0 0; }
 
- .checkout-form > input { margin: 0 0 3px; }
+.checkout-form > input { margin: 0 0 3px; }
 
 .checkout-account-phone { display: grid; gap: 2px; margin: 0 0 3px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-2); }
 .checkout-account-phone strong { font-family: var(--font-mono); font-size: 14px; }
