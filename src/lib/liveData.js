@@ -27,6 +27,7 @@ export async function updateLiveProduct(productId, changes) { return request('/a
 export async function archiveLiveProduct(productId) { return request('/api/products/' + productId, { method: 'DELETE' }) }
 export async function placeLiveOrder(details) { return request('/api/orders', { method: 'POST', body: JSON.stringify(details) }) }
 export async function updateLiveOrderStatus(orderId, nextStatus) { return request('/api/orders/' + orderId + '/status', { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) }) }
+export async function deleteLiveOrder(orderId) { return request('/api/orders/' + encodeURIComponent(orderId), { method: 'DELETE' }) }
 export async function setLiveRequestRate(orderItemId, rate) { return request('/api/order-items/' + orderItemId + '/price', { method: 'PATCH', body: JSON.stringify({ rate }) }) }
 function poll(onChange, onStatus, account = false) {
   let active = true
