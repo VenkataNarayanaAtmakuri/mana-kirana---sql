@@ -650,7 +650,16 @@ input:focus, select:focus { border-color: #749a7a; outline: 0; box-shadow: 0 0 0
 
 .field-label { margin: 5px 0 0; }
 
-.checkout-form > input { margin: 0 0 3px; }
+ .checkout-form > input { margin: 0 0 3px; }
+
+.checkout-account-phone { display: grid; gap: 2px; margin: 0 0 3px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-2); }
+.checkout-account-phone strong { font-family: var(--font-mono); font-size: 14px; }
+.checkout-account-phone span { color: var(--muted); font-size: 11px; }
+.checkout-phone-entry { display: flex; align-items: center; gap: 8px; margin: 0 0 3px; }
+.checkout-phone-entry > span { padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface-2); font-weight: 700; }
+.checkout-phone-entry input { min-width: 0; min-height: 44px; flex: 1; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); }
+.checkout-phone-hint, .profile-phone-hint { margin: 0 0 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.optional-label { margin-left: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
 
 .payment-options { display: grid; gap: 6px; margin: 9px 0 5px; padding: 0; border: 0; }
 
