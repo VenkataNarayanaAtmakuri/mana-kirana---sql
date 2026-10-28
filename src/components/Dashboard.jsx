@@ -58,7 +58,7 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
       <div className="order-card-top">
         <div className="order-customer">
           <span className="customer-avatar">{order.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span>
-          <div><strong>{order.name}</strong><span>{order.phone} · {timeLabel(order.createdAt)}</span></div>
+          <div><strong>{order.name}</strong><span>Account · {order.phone}</span>{order.pickupPhone && <span>Pickup · {order.pickupPhone}</span>}<span>{timeLabel(order.createdAt)}</span></div>
         </div>
         <span className={`status-pill status-${meta.className}`}><StatusIcon size={13} />{meta.label}</span>
       </div>

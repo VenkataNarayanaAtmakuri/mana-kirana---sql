@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, CircleHelp } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
 import ChangePasswordDialog from './components/ChangePasswordDialog.jsx'
+import EditProfileDialog from './components/EditProfileDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
 import CustomerOrderHistory from './components/CustomerOrderHistory.jsx'
 import OrderNotificationControl from './components/OrderNotificationControl.jsx'
@@ -20,6 +21,7 @@ import {
   fetchLiveCatalog,
   fetchLiveOrders,
   fetchProfile,
+  updateLiveProfile,
   placeLiveOrder,
   setLiveRequestRate,
   subscribeToAccount,
@@ -71,7 +73,7 @@ function calculateReadyAt(currentOrders) {
   return new Date(Math.max(nextAfterQueue, nextAfterScheduled)).toISOString()
 }
 
-function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onChangePassword, onSignOut }) {
+function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onEditProfile, onChangePassword, onSignOut }) {
   return (
     <header className="top">
       <div className="wrap top-inner">
@@ -92,7 +94,7 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
           </button>
         </div>
         {supabaseConfigured && (authUser
-          ? <div className="account-actions"><button className="account-button" type="button" onClick={onChangePassword}>Change password</button><button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button></div>
+          ? <div className="account-actions"><button className="account-button" type="button" onClick={onEditProfile}>Edit profile</button><button className="account-button" type="button" onClick={onChangePassword}>Change password</button><button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button></div>
           : <div className="account-actions"><button className="account-button" type="button" onClick={onCustomerSignIn}>Customer Sign In</button><button className="account-button shopkeeper-signin-button" type="button" onClick={onShopkeeperSignIn}>Shopkeeper Sign In</button></div>)}
       </div>
     </header>
@@ -169,6 +171,7 @@ function App() {
   const [showAuthDialog, setShowAuthDialog] = useState(false)
   const [authDialogRole, setAuthDialogRole] = useState('customer')
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false)
+  const [showEditProfileDialog, setShowEditProfileDialog] = useState(false)
   const [showSignOutDialog, setShowSignOutDialog] = useState(false)
   const [signOutBusy, setSignOutBusy] = useState(false)
   const [signOutError, setSignOutError] = useState('')
@@ -177,7 +180,7 @@ function App() {
   const [realtimeConnected, setRealtimeConnected] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [phone, setPhone] = useState('')
-  const [phoneConfirm, setPhoneConfirm] = useState('')
+  const [alternatePickupPhone, setAlternatePickupPhone] = useState('')
   const [payment, setPayment] = useState('pickup')
   const [successOrderId, setSuccessOrderId] = useState('')
   const [successOrderSnapshot, setSuccessOrderSnapshot] = useState(null)
@@ -230,15 +233,26 @@ function App() {
       if (event === 'SIGNED_IN') {
         const name = String(nextUser?.full_name || '').trim()
         setCustomerWelcome(nextUser?.role === 'customer' ? name || 'there' : '')
+        setCustomerName(nextUser?.full_name || '')
+        setPhone(nextUser?.phone || '')
+        setAlternatePickupPhone('')
       }
       if (event === 'SIGNED_OUT') {
         setCustomerWelcome('')
+        setCustomerName('')
+        setPhone('')
+        setAlternatePickupPhone('')
         setNotice('You are signed out.')
       }
     })
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) setLiveError(error.message)
-      setAuthUser(data.session?.user || null)
+      const restoredUser = data.session?.user || null
+      setAuthUser(restoredUser)
+      if (restoredUser) {
+        setCustomerName(restoredUser.full_name || '')
+        setPhone(restoredUser.phone || '')
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -258,6 +272,16 @@ function App() {
     }).finally(() => { if (active) setProfileLoading(false) })
     return () => { active = false }
   }, [authUser])
+
+  function handleProfileUpdated(updatedProfile) {
+    setAuthUser((current) => current ? { ...current, ...updatedProfile } : current)
+    setProfile(updatedProfile)
+    setCustomerName(updatedProfile.full_name || '')
+    setPhone(updatedProfile.phone || '')
+    if (updatedProfile.role === 'customer') setCustomerWelcome(updatedProfile.full_name || 'there')
+    setShowEditProfileDialog(false)
+    setNotice('Profile information updated.')
+  }
 
   async function handleConfirmedSignOut(selectedRole) {
     if (!authUser || signOutBusy) return
@@ -683,32 +707,38 @@ function App() {
       setNotice('The confirmed item subtotal must be more than ₹200. Unpriced requests do not count toward the minimum.')
       return
     }
-    const digits = phone.replace(/\D/g, '')
-    const confirmedDigits = phoneConfirm.replace(/\D/g, '')
-    if (digits.length !== 10 || confirmedDigits.length !== 10) {
-      setNotice('Enter the 10-digit mobile number in both fields to confirm your order.')
+    if (supabaseConfigured && !authUser) {
+      setAuthDialogRole('customer')
+      setShowAuthDialog(true)
+      setNotice('Sign in with your mobile number to confirm and submit this order.')
       return
     }
-    if (digits !== confirmedDigits) {
-      setNotice('The mobile numbers do not match. Re-enter the same number to confirm your order.')
+
+    const primaryPhone = supabaseConfigured ? authUser?.phone : phone
+    const digits = String(primaryPhone || '').replace(/\D/g, '').slice(-10)
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      setNotice(supabaseConfigured
+        ? 'Your account mobile number is missing or invalid. Update it in Edit profile before ordering.'
+        : 'Enter a valid 10-digit Indian mobile number.')
       return
     }
+    const pickupDigits = String(alternatePickupPhone || '').replace(/\D/g, '')
+    if (alternatePickupPhone.trim() && !/^[6-9]\d{9}$/.test(pickupDigits)) {
+      setNotice('Enter a valid 10-digit alternate pickup number or clear the optional field.')
+      return
+    }
+
     if (supabaseConfigured) {
-      if (!authUser) {
-        setAuthDialogRole('customer')
-        setShowAuthDialog(true)
-        setNotice('Sign in with your mobile number to confirm and submit this order.')
-        return
-      }
-      const accountDigits = (authUser.phone || '').replace(/\D/g, '').slice(-10)
+      const accountDigits = String(authUser.phone || '').replace(/\D/g, '').slice(-10)
       if (accountDigits !== digits) {
-        setNotice('Enter the mobile number linked to the signed-in, verified account.')
+        setNotice('Your account number changed. Refresh the page and try again.')
         return
       }
       try {
         const result = await placeLiveOrder({
           name: customerName.trim(),
           phone: digits,
+          pickupPhone: pickupDigits ? '+91' + pickupDigits : null,
           channel,
           payment: customItems.length ? 'pickup' : payment === 'upi' ? 'upi_demo' : 'pickup',
           items: [
@@ -720,6 +750,7 @@ function App() {
         setSuccessOrderSnapshot({ id, estimatedReadyAt: result.estimated_ready_at, status: 'pending' })
         setCart({})
         setCustomItems([])
+        setAlternatePickupPhone('')
         setSuccessOrderId(id)
         setMobileCartOpen(false)
         await Promise.all([refreshLiveCatalog(), refreshLiveAccount()])
@@ -730,11 +761,13 @@ function App() {
       }
       return
     }
+
     const id = 'MK-' + String(Date.now()).slice(-6)
     const order = {
       id,
       name: customerName.trim(),
       phone: digits.slice(0, 5) + ' ' + digits.slice(5),
+      pickupPhone: pickupDigits ? '+91 ' + pickupDigits : '',
       channel,
       status: 'pending',
       payment: customItems.length ? 'Pay at pickup · requested prices pending' : payment === 'upi' ? 'UPI · demo only' : 'Pay at pickup · demo',
@@ -771,6 +804,7 @@ function App() {
     setOrders((current) => [order, ...current])
     setCart({})
     setCustomItems([])
+    setAlternatePickupPhone('')
     setSuccessOrderId(id)
     setMobileCartOpen(false)
     setNotice('Order ' + id + ' sent to ' + orderChannelLabel(channel).toLowerCase() + '.')
@@ -882,8 +916,9 @@ function App() {
       onNameChange: setCustomerName,
       phone,
       onPhoneChange: setPhone,
-      phoneConfirm,
-      onPhoneConfirmChange: setPhoneConfirm,
+      accountPhone: authUser?.phone || '',
+      alternatePickupPhone,
+      onAlternatePickupPhoneChange: setAlternatePickupPhone,
       payment,
       onPaymentChange: setPayment,
       onSubmit: submitOrder,
@@ -897,7 +932,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
@@ -1052,6 +1087,7 @@ function App() {
       )}
       {showAuthDialog && <AuthDialog role={authDialogRole} onClose={() => setShowAuthDialog(false)} />}
       {showChangePasswordDialog && <ChangePasswordDialog onClose={() => setShowChangePasswordDialog(false)} />}
+      {showEditProfileDialog && authUser && <EditProfileDialog authUser={authUser} onClose={() => setShowEditProfileDialog(false)} onUpdated={handleProfileUpdated} />}
     </div>
   )
 }

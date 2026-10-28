@@ -22,6 +22,8 @@ Create a new, empty database in your managed PostgreSQL provider. Do not reuse o
 
 The schema is for a new database. Do not run it against production data without reviewing the SQL and taking a backup.
 
+For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number.
+
 ## 2. Configure the backend
 
 ```powershell
@@ -89,7 +91,7 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 - Phone numbers are normalized to Indian `+91` E.164 form.
 - Passwords are hashed with Argon2id; plaintext passwords are never stored.
 - Login uses a server-managed, HTTP-only session cookie stored in PostgreSQL.
-- This initial password-only signup does **not** prove phone ownership. The `phone_verified` field defaults to `false`. Add a trusted verification/recovery flow before treating the phone number as proof of identity.
+- This initial password-only signup does **not** prove phone ownership. The `phone_verified` field defaults to `false`. Profile mobile-number changes require the current password but do not send an OTP, so only enter a number you control.
 - Existing Supabase Auth accounts are not copied to this new database. This project starts with a fresh user table as requested.
 - For production, use HTTPS, set `NODE_ENV=production`, set `FRONTEND_URL` to the exact HTTPS origin, configure `TRUST_PROXY=true` only behind a trusted proxy, and review CSRF protections and cookie settings.
 
@@ -98,12 +100,12 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 - `GET /api/health`
 - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `GET /api/auth/me`, `POST /api/auth/logout`
 - `GET /api/catalog`
-- `GET /api/orders`, `POST /api/orders`, `PATCH /api/orders/:id/status`
+- `GET /api/orders`, `POST /api/orders` (account mobile required; optional alternate pickup mobile), `PATCH /api/orders/:id/status`
 - `PATCH /api/order-items/:id/price`
 - `GET /api/messages`
 - `POST /api/categories`, `DELETE /api/categories/:id`
 - `POST /api/products`, `PATCH /api/products/:id`, `DELETE /api/products/:id`
-- `GET /api/profile/:id`
+- `GET /api/profile/:id`, `PATCH /api/profile/:id` (edit your name and sign-in mobile; changing the mobile requires your current password)
 
 The old Supabase realtime channels are replaced with 5-second polling. This is a simple first implementation; WebSockets can be added later if needed.
 
