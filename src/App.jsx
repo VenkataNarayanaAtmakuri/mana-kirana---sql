@@ -887,7 +887,7 @@ function App() {
             <div className="order-rules-notice"><strong>Minimum confirmed order: more than ₹200.</strong> Items waiting for a shopkeeper’s price do not count toward this minimum. Orders are scheduled in 15-minute pickup slots based on the queue.</div>
             <div className="custom-request-notice"><strong>Can’t find an item?</strong> Add a request by name and quantity. Its price is not included in the confirmed subtotal; the shopkeeper will set the rate, and you can settle that amount at the shop desk.</div>
             <OrderMode channel={channel} onChange={selectChannel} />
-            <SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} onLoadItems={addSavedItemsToCart} />
+            <SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} products={products} onLoadItems={addSavedItemsToCart} />
             {supabaseConfigured && authUser && profile?.role === 'customer' && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
             {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Want to place an order?</strong> Sign in with your mobile number and password, then enter that same number at checkout. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Customer Sign In</button></p>}
             {liveLoading && products.length === 0 ? <div className="empty-results"><strong>Loading the shared catalogue…</strong></div> : <div className="shop-layout" id="shop-products">
