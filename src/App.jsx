@@ -183,6 +183,7 @@ function App() {
   const [successOrderSnapshot, setSuccessOrderSnapshot] = useState(null)
   const [mobileCartOpen, setMobileCartOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [customerWelcome, setCustomerWelcome] = useState('')
   const [deletingOrderId, setDeletingOrderId] = useState('')
   const [demoHiddenOrders, setDemoHiddenOrders] = useState(readDemoHiddenOrders)
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
@@ -226,7 +227,14 @@ function App() {
         setOrders([])
         setCustomerMessages([])
       }
-      if (event === 'SIGNED_OUT') setNotice('You are signed out.')
+      if (event === 'SIGNED_IN') {
+        const name = String(nextUser?.full_name || '').trim()
+        setCustomerWelcome(nextUser?.role === 'customer' ? name || 'there' : '')
+      }
+      if (event === 'SIGNED_OUT') {
+        setCustomerWelcome('')
+        setNotice('You are signed out.')
+      }
     })
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) setLiveError(error.message)
@@ -894,6 +902,17 @@ function App() {
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
+        {authUser?.role === 'customer' && customerWelcome && (
+          <section className="customer-welcome" role="status" aria-live="polite">
+            <div className="customer-welcome-icon" aria-hidden="true">👋</div>
+            <div className="customer-welcome-copy">
+              <p className="customer-welcome-kicker">Glad you’re here</p>
+              <h2>Welcome, {customerWelcome}!</h2>
+              <p>Your neighbourhood groceries are ready when you are.</p>
+            </div>
+            <button className="customer-welcome-dismiss" type="button" onClick={() => setCustomerWelcome('')} aria-label="Dismiss welcome message">×</button>
+          </section>
+        )}
         {view === 'dashboard' ? (
           !supabaseConfigured || profile?.role === 'shopkeeper'
             ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
