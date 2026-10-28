@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS products_active_category_idx ON products(category_id)
 CREATE TABLE IF NOT EXISTS orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), order_number bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
   customer_id uuid NOT NULL REFERENCES profiles(id), customer_name text NOT NULL, customer_phone text NOT NULL,
+  pickup_phone text,
   channel text NOT NULL CHECK(channel IN ('online','entrance')),
   status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','preparing','ready','collected','rejected')),
   payment_method text NOT NULL CHECK(payment_method IN ('pickup','upi_demo')),
