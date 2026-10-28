@@ -6,6 +6,7 @@ import { pool } from './db.js'
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
 const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
+const profileUpdateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile update attempts. Try again later.' } })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
   if (digits.length === 10 && /^[6-9]/.test(digits)) return '+91' + digits
@@ -83,6 +84,34 @@ router.get('/profile/:id', requireAuth, async (req, res) => {
   const { rows } = await pool.query('SELECT id,role,full_name,phone FROM profiles WHERE id=$1', [req.params.id])
   if (!rows[0]) return res.status(404).json({ error: 'Profile not found.' })
   res.json({ id: rows[0].id, role: rows[0].role, full_name: rows[0].full_name, phone: rows[0].phone })
+})
+router.patch('/profile/:id', profileUpdateLimiter, requireAuth, async (req, res) => {
+  if (req.params.id !== req.session.user.id) return res.status(403).json({ error: 'You can only edit your own profile.' })
+  const fullName = String(req.body.fullName || '').trim()
+  const phone = phoneE164(req.body.phone)
+  if (fullName.length < 2 || fullName.length > 100) return res.status(400).json({ error: 'Enter a name between 2 and 100 characters.' })
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit Indian mobile number.' })
+
+  if (phone !== req.session.user.phone) {
+    const currentPassword = String(req.body.currentPassword || '')
+    if (!currentPassword) return res.status(400).json({ error: 'Enter your current password to change your mobile number.' })
+    const { rows: accountRows } = await pool.query('SELECT password_hash FROM profiles WHERE id=$1', [req.session.user.id])
+    const valid = accountRows[0] && await argon2.verify(accountRows[0].password_hash, currentPassword).catch(() => false)
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' })
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'UPDATE profiles SET full_name=$1,phone=$2 WHERE id=$3 RETURNING id,phone,full_name,role,phone_verified',
+      [fullName, phone, req.session.user.id],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Profile not found.' })
+    req.session.user = publicUser(rows[0])
+    res.json(publicUser(rows[0]))
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'That mobile number is already linked to another account.' })
+    throw error
+  }
 })
 router.get('/catalog', async (_req, res) => {
   const [categories, products] = await Promise.all([
@@ -184,9 +213,12 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
   }
 })
 router.post('/orders', requireAuth, async (req, res) => {
-  const { name, phone: rawPhone, channel, payment, items } = req.body
+  const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, payment, items } = req.body
   const phone = phoneE164(rawPhone)
+  const pickupText = String(rawPickupPhone || '').trim()
+  const pickupPhone = pickupText ? phoneE164(pickupText) : null
   if (!phone || phone !== req.session.user.phone) return res.status(400).json({ error: 'Use the phone number linked to your signed-in account.' })
+  if (pickupText && !pickupPhone) return res.status(400).json({ error: 'Enter a valid 10-digit alternate pickup number.' })
   if (!String(name || '').trim() || !Array.isArray(items) || !items.length || !['online','entrance'].includes(channel)) return res.status(400).json({ error: 'Order details are incomplete.' })
   const client = await pool.connect()
   try {
@@ -211,7 +243,7 @@ router.post('/orders', requireAuth, async (req, res) => {
     const count = await client.query("SELECT count(*)::int AS n FROM orders WHERE status IN ('pending','preparing') AND estimated_ready_at IS NULL")
     const latest = new Date(queue.rows[0].latest).getTime()
     const ready = new Date(Math.max(Date.now() + (count.rows[0].n + 1) * 15 * 60000, latest + 15 * 60000))
-    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,channel,payment_method,total,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,order_number,estimated_ready_at,status', [req.session.user.id, String(name).trim(), phone, channel, hasCustom ? 'pickup' : payment === 'upi_demo' ? 'upi_demo' : 'pickup', total, ready.toISOString()])
+    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,total,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,order_number,estimated_ready_at,status', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, hasCustom ? 'pickup' : payment === 'upi_demo' ? 'upi_demo' : 'pickup', total, ready.toISOString()])
     for (const item of normalized) {
       if (!item.custom) await client.query('UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
