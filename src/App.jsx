@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Check, CircleHelp } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, Check, CircleHelp, Moon, Sun } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
 import AccountSwitcherDialog from './components/AccountSwitcherDialog.jsx'
 import ChangePasswordDialog from './components/ChangePasswordDialog.jsx'
@@ -58,6 +58,15 @@ function getInitialChannel() {
 }
 
 const DEMO_HIDDEN_ORDER_KEY = 'mana-kirana-hidden-orders-v1'
+const THEME_PREFERENCE_KEY = 'mana-kirana-theme-v1'
+
+function readThemePreference() {
+  try {
+    return localStorage.getItem(THEME_PREFERENCE_KEY) === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
 
 function readDemoHiddenOrders() {
   try {
@@ -81,7 +90,7 @@ function calculateReadyAt(currentOrders) {
   return new Date(Math.max(nextAfterQueue, nextAfterScheduled)).toISOString()
 }
 
-function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onEditProfile, onChangePassword, onAddAccount, onSwitchAccount, accountSwitchBusy, onSignOut }) {
+function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, theme, onToggleTheme, onCustomerSignIn, onShopkeeperSignIn, onEditProfile, onChangePassword, onAddAccount, onSwitchAccount, accountSwitchBusy, onSignOut }) {
   return (
     <header className="top">
       <div className="wrap top-inner">
@@ -101,16 +110,25 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
             Shopkeeper{pendingCount > 0 && <span className="count">{pendingCount}</span>}
           </button>
         </div>
-        {supabaseConfigured && (authUser
-          ? <div className="account-actions">
-              <button className="account-button account-switch-button" type="button" disabled={accountSwitchBusy} onClick={authUser.linkedAccount ? onSwitchAccount : onAddAccount}>
-                {accountSwitchBusy ? 'Switching…' : authUser.linkedAccount ? 'Switch to ' + (authUser.linkedAccount.role === 'shopkeeper' ? 'Shopkeeper' : 'Customer') : 'Link other account'}
-              </button>
-              <button className="account-button" type="button" onClick={onEditProfile}>Edit profile</button>
-              <button className="account-button" type="button" onClick={onChangePassword}>Change password</button>
-              <button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button>
-            </div>
-          : <div className="account-actions"><button className="account-button" type="button" onClick={onCustomerSignIn}>Customer Sign In</button><button className="account-button shopkeeper-signin-button" type="button" onClick={onShopkeeperSignIn}>Shopkeeper Sign In</button></div>)}
+        <div className="account-actions">
+          <button className="account-button theme-toggle" type="button" aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={onToggleTheme}>
+            {theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+            <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+          </button>
+          {supabaseConfigured && (authUser
+            ? <>
+                <button className="account-button account-switch-button" type="button" disabled={accountSwitchBusy} onClick={authUser.linkedAccount ? onSwitchAccount : onAddAccount}>
+                  {accountSwitchBusy ? 'Switching…' : authUser.linkedAccount ? 'Switch to ' + (authUser.linkedAccount.role === 'shopkeeper' ? 'Shopkeeper' : 'Customer') : 'Link other account'}
+                </button>
+                <button className="account-button" type="button" onClick={onEditProfile}>Edit profile</button>
+                <button className="account-button" type="button" onClick={onChangePassword}>Change password</button>
+                <button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button>
+              </>
+            : <>
+                <button className="account-button" type="button" onClick={onCustomerSignIn}>Customer Sign In</button>
+                <button className="account-button shopkeeper-signin-button" type="button" onClick={onShopkeeperSignIn}>Shopkeeper Sign In</button>
+              </>)}
+        </div>
       </div>
     </header>
   )
@@ -170,6 +188,7 @@ function UnlistedItemForm({ onAdd }) {
 
 function App() {
   const [view, setView] = useState(getInitialView)
+  const [theme, setTheme] = useState(readThemePreference)
   const [channel, setChannel] = useState(getInitialChannel)
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
@@ -217,6 +236,11 @@ function App() {
   const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
   const notificationEnabledRef = useRef(false)
   const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem(THEME_PREFERENCE_KEY, theme) } catch { /* Theme still applies for this session. */ }
+  }, [theme])
 
   function selectView(nextView) {
     setView(nextView)
@@ -1108,7 +1132,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onAddAccount={() => setShowAccountSwitcherDialog(true)} onSwitchAccount={handleAccountSwitch} accountSwitchBusy={accountSwitchBusy} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} theme={theme} onToggleTheme={() => setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark')} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onAddAccount={() => setShowAccountSwitcherDialog(true)} onSwitchAccount={handleAccountSwitch} accountSwitchBusy={accountSwitchBusy} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><span className={"store-status-dot" + (realtimeConnected ? "" : " is-connecting")} aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
