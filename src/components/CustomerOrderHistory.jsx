@@ -29,6 +29,8 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                   <span className={'status-pill status-' + status.className}>{status.label}</span>
                 </div>
                 <p className="customer-order-items">{order.items.map((item) => item.name + ' · ' + formatQuantity(item.quantity, item.unit)).join(', ')}</p>
+                {order.status === 'ready' && /^\d{4}$/.test(String(order.pickupPin || '')) && <div className="customer-pickup-pin customer-history-pickup-pin"><span>Show this 4-digit PIN at pickup</span><strong>{order.pickupPin}</strong></div>}
+                {order.discountAmount > 0 && <p className="customer-order-discount">{order.offerCode} saved {formatMoney(order.discountAmount)} on this order.</p>}
                 <div className="customer-order-bottom">
                   <time dateTime={order.createdAt}>{formatReadyTime(order.createdAt)}</time>
                   <strong>{formatMoney(order.total)}</strong>
