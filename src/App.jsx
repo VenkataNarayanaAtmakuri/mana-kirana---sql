@@ -17,6 +17,7 @@ import {
   createLiveCategory,
   createLiveProduct,
   createLiveOffer,
+  deleteLiveOffer,
   downloadLiveReport,
   fetchRestockSuggestions,
   hideLiveOrder,
@@ -610,6 +611,19 @@ function App() {
     } catch (error) { setLiveError(error.message); setNotice('Could not update offer: ' + error.message) }
   }
 
+  async function deleteOffer(offerId, offerCode) {
+    try {
+      await deleteLiveOffer(offerId)
+      await refreshLiveCatalog()
+      setNotice('Offer ' + offerCode.toUpperCase() + ' deleted. Past orders are unchanged.')
+      return true
+    } catch (error) {
+      setLiveError(error.message)
+      setNotice('Could not delete offer: ' + error.message)
+      return false
+    }
+  }
+
   async function saveStoreSettings(details) {
     try {
       await updateLiveStoreSettings(details)
@@ -1114,7 +1128,7 @@ function App() {
           profileLoading
             ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
             : !supabaseConfigured || profile?.role === 'shopkeeper'
-              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onSaveStoreSettings={saveStoreSettings} onExportReport={exportReport} />
+              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onDeleteOffer={deleteOffer} onSaveStoreSettings={saveStoreSettings} onExportReport={exportReport} />
              : <section className="access-gate">
                <h1>Shopkeeper access</h1>
                <p>{!authUser
