@@ -1959,3 +1959,15 @@ button:active:not(:disabled) { transform: translateY(1px); }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* Secure account switching */
+.account-switch-button { color: var(--primary); border-color: #b8d9bf; background: #f0f8f1; font-weight: 800; }
+.account-switch-button:hover:not(:disabled) { color: #fff; border-color: var(--primary); background: var(--primary); }
+.account-switch-button:disabled { opacity: .6; cursor: wait; }
+.account-switch-dialog .auth-form { gap: 10px; }
+.account-switch-dialog .auth-form > label { margin-top: 2px; }
+.account-switch-note { padding: 10px 12px; border: 1px solid #dbe9dc; border-radius: 10px; color: var(--muted); background: #f6faf6; font-size: 12px; line-height: 1.45; }
+@media (max-width: 560px) {
+  .account-switch-button { margin-right: auto; }
+  .account-switch-dialog { max-height: calc(100vh - 24px); overflow: auto; }
+}

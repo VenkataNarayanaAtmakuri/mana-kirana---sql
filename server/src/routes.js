@@ -6,6 +6,7 @@ import { pool } from './db.js'
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
 const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
+const accountLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many account-link attempts. Try again later.' } })
 const profileUpdateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile update attempts. Try again later.' } })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
@@ -17,6 +18,8 @@ const phoneE164 = (input) => {
 const publicUser = (row) => ({ id: row.id, phone: row.phone, full_name: row.full_name, role: row.role, phone_verified: row.phone_verified })
 const requireAuth = (req, res, next) => req.session.user ? next() : res.status(401).json({ error: 'Please sign in to continue.' })
 const requireShopkeeper = (req, res, next) => req.session.user?.role === 'shopkeeper' ? next() : res.status(403).json({ error: 'Shopkeeper access required.' })
+const regenerateSession = (req) => new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()))
+const saveSession = (req) => new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()))
 
 router.get('/health', async (_req, res) => {
   await pool.query('SELECT 1')
@@ -32,6 +35,7 @@ router.post('/auth/register', authLimiter, async (req, res) => {
   const hash = await argon2.hash(password, { type: argon2.argon2id })
   try {
     const { rows } = await pool.query('INSERT INTO profiles(phone,full_name,password_hash,role,phone_verified) VALUES($1,$2,$3,\'customer\',false) RETURNING id,phone,full_name,role,phone_verified', [phone, fullName, hash])
+    delete req.session.linkedAccount
     req.session.user = publicUser(rows[0])
     res.status(201).json({ user: req.session.user })
   } catch (error) {
@@ -53,8 +57,57 @@ router.post('/auth/login', authLimiter, async (req, res) => {
       ? 'This account is not registered as a shopkeeper. Use Customer Sign In or contact the project owner for shopkeeper access.'
       : 'This is a shopkeeper account. Please use Shopkeeper Sign In.' })
   }
+  delete req.session.linkedAccount
   req.session.user = publicUser(rows[0])
-  res.json({ user: req.session.user })
+  res.json({ user: req.session.user, linkedAccount: null })
+})
+router.post('/auth/link-account', accountLinkLimiter, requireAuth, async (req, res) => {
+  const activeUser = req.session.user
+  const phone = phoneE164(req.body.phone)
+  const password = String(req.body.password || '')
+  const expectedRole = String(req.body.expectedRole || '')
+  if (!['customer', 'shopkeeper'].includes(expectedRole)) return res.status(400).json({ error: 'Choose a valid account type.' })
+  if (!phone || !password) return res.status(400).json({ error: 'Enter the other account’s valid mobile number and password.' })
+  if (req.session.linkedAccount) return res.status(409).json({ error: 'Another account is already linked. Switch to it or sign out to connect a different account.' })
+
+  const { rows } = await pool.query('SELECT id,phone,full_name,role,phone_verified,password_hash FROM profiles WHERE phone=$1', [phone])
+  const target = rows[0]
+  const valid = target && await argon2.verify(target.password_hash, password).catch(() => false)
+  if (!valid) return res.status(401).json({ error: 'Phone number or password is incorrect.' })
+  if (target.id === activeUser.id) return res.status(400).json({ error: 'Enter a different account to link.' })
+  if (target.role !== expectedRole) return res.status(403).json({ error: 'These credentials do not match the selected account type.' })
+  if (!['customer', 'shopkeeper'].includes(activeUser.role) || activeUser.role === target.role) {
+    return res.status(400).json({ error: 'Link one customer account and one shopkeeper account.' })
+  }
+  const { rows: activeRows } = await pool.query('SELECT id,phone,full_name,role,phone_verified FROM profiles WHERE id=$1', [activeUser.id])
+  const activeProfile = activeRows[0]
+  if (!activeProfile || activeProfile.role !== activeUser.role) return res.status(401).json({ error: 'Your current account changed. Sign in again to continue.' })
+
+  await regenerateSession(req)
+  req.session.user = publicUser(target)
+  req.session.linkedAccount = publicUser(activeProfile)
+  await saveSession(req)
+  res.json({ user: req.session.user, linkedAccount: req.session.linkedAccount })
+})
+router.post('/auth/switch-account', requireAuth, async (req, res) => {
+  const activeUser = req.session.user
+  const linkedAccount = req.session.linkedAccount
+  if (!linkedAccount) return res.status(409).json({ error: 'Link your other account before switching.' })
+
+  const { rows } = await pool.query('SELECT id,phone,full_name,role,phone_verified FROM profiles WHERE id = ANY($1::uuid[])', [[activeUser.id, linkedAccount.id]])
+  const profiles = new Map(rows.map((profile) => [profile.id, profile]))
+  const currentProfile = profiles.get(activeUser.id)
+  const targetProfile = profiles.get(linkedAccount.id)
+  if (!currentProfile || !targetProfile || currentProfile.role !== activeUser.role || targetProfile.role !== linkedAccount.role || currentProfile.role === targetProfile.role) {
+    delete req.session.linkedAccount
+    await saveSession(req)
+    return res.status(403).json({ error: 'The linked account permissions changed. Sign in again to connect the accounts.' })
+  }
+
+  req.session.user = publicUser(targetProfile)
+  req.session.linkedAccount = publicUser(currentProfile)
+  await saveSession(req)
+  res.json({ user: req.session.user, linkedAccount: req.session.linkedAccount })
 })
 router.post('/auth/change-password', passwordChangeLimiter, requireAuth, async (req, res) => {
   const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : ''
@@ -73,7 +126,7 @@ router.post('/auth/change-password', passwordChangeLimiter, requireAuth, async (
   await pool.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, req.session.user.id])
   res.json({ ok: true })
 })
-router.get('/auth/me', (req, res) => res.json({ user: req.session.user || null }))
+router.get('/auth/me', (req, res) => res.json({ user: req.session.user || null, linkedAccount: req.session.user ? req.session.linkedAccount || null : null }))
 router.post('/auth/logout', (req, res) => req.session.destroy((error) => {
   if (error) return res.status(500).json({ error: 'Could not sign out.' })
   res.clearCookie('mk.sid', { path: '/' })
