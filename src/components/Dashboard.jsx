@@ -375,7 +375,7 @@ function StoreHoursPanel({ storeStatus, onSave }) {
   )
 }
 
-function OfferManager({ offers, onCreateOffer, onToggleOffer }) {
+function OfferManager({ offers, onCreateOffer, onToggleOffer, onDeleteOffer }) {
   const [title, setTitle] = useState('')
   const [code, setCode] = useState('')
   const [discountPercent, setDiscountPercent] = useState('10')
@@ -383,6 +383,7 @@ function OfferManager({ offers, onCreateOffer, onToggleOffer }) {
   const [endsAt, setEndsAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [deletingOfferId, setDeletingOfferId] = useState('')
   async function submit(event) {
     event.preventDefault()
     setError('')
@@ -398,6 +399,25 @@ function OfferManager({ offers, onCreateOffer, onToggleOffer }) {
     } catch (submitError) { setError(submitError?.message || 'Could not save this offer.') }
     finally { setBusy(false) }
   }
+  async function deleteOffer(offer) {
+    setError('')
+    if (busy || deletingOfferId) return
+    const confirmed = window.confirm(
+      'Permanently delete offer ' + offer.code + '? Customers will no longer be able to use it. Past orders will remain unchanged.',
+    )
+    if (!confirmed) return
+
+    setDeletingOfferId(offer.id)
+    try {
+      const deleted = await onDeleteOffer(offer.id, offer.code)
+      if (!deleted) setError('Could not delete this offer. Review the message at the top of the page.')
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Could not delete this offer.')
+    } finally {
+      setDeletingOfferId('')
+    }
+  }
+
   return (
     <section className="offer-manager" aria-label="Offers and coupons">
       <div className="store-hours-heading"><div><h2>Offers and coupons</h2><p>Create a code customers can apply to their confirmed basket.</p></div><span className="offer-count">{offers.length} saved</span></div>
@@ -414,7 +434,10 @@ function OfferManager({ offers, onCreateOffer, onToggleOffer }) {
         const expired = offer.ends_at && new Date(offer.ends_at).getTime() <= Date.now()
         return <li key={offer.id}>
           <span><strong>{offer.title}</strong><small><code>{offer.code}</code> · {offer.discountPercent}% off · minimum {formatMoney(offer.minimumOrder)}{offer.ends_at ? ' · expires ' + new Date(offer.ends_at).toLocaleString('en-IN') : ''}</small></span>
-          <button className="btn" type="button" disabled={Boolean(expired && !offer.active)} onClick={() => onToggleOffer(offer.id, !offer.active)}>{expired ? offer.active ? 'Pause expired' : 'Expired' : offer.active ? 'Pause' : 'Activate'}</button>
+          <div className="offer-manager-actions">
+            <button className="btn" type="button" disabled={Boolean(expired && !offer.active) || Boolean(deletingOfferId)} onClick={() => onToggleOffer(offer.id, !offer.active)}>{expired ? offer.active ? 'Pause expired' : 'Expired' : offer.active ? 'Pause' : 'Activate'}</button>
+            <button className="btn offer-delete-button" type="button" disabled={Boolean(deletingOfferId) || busy} onClick={() => deleteOffer(offer)} aria-label={'Delete ' + offer.code + ' offer'}>{deletingOfferId === offer.id ? 'Deleting…' : 'Delete'}</button>
+          </div>
         </li>
       })}</ul> : <p className="expiry-alert-clear">No offers yet.</p>}
     </section>
@@ -443,7 +466,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onSaveStoreSettings, onExportReport }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onExportReport }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const visibleOrders = useMemo(() => {
@@ -515,7 +538,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
         </div>
       </section> : <section className="store-tools-section">
         <StoreHoursPanel storeStatus={storeStatus} onSave={onSaveStoreSettings} />
-        <OfferManager offers={offers} onCreateOffer={onCreateOffer} onToggleOffer={onToggleOffer} />
+        <OfferManager offers={offers} onCreateOffer={onCreateOffer} onToggleOffer={onToggleOffer} onDeleteOffer={onDeleteOffer} />
       </section>}
     </section>
   )
