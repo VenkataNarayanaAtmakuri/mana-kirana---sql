@@ -992,7 +992,23 @@ function App() {
             ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
             : !supabaseConfigured || profile?.role === 'shopkeeper'
               ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
-            : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
+             : <section className="access-gate">
+               <h1>Shopkeeper access</h1>
+               <p>{!authUser
+                 ? 'Sign in with your shopkeeper account to manage orders, stock, rates, and categories.'
+                 : authUser.role === 'customer'
+                   ? authUser.linkedAccount?.role === 'shopkeeper'
+                     ? 'Your customer account is active. Switch to your linked shopkeeper account to manage orders and stock.'
+                     : 'Your customer account is active. Link your shopkeeper account once to manage store orders and stock.'
+                   : 'Shopkeeper access could not be confirmed. Refresh the page or contact support.'}</p>
+               {!authUser
+                 ? <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>
+                 : authUser.role === 'customer'
+                   ? authUser.linkedAccount?.role === 'shopkeeper'
+                     ? <button className="btn primary" type="button" disabled={accountSwitchBusy} onClick={handleAccountSwitch}>Switch to Shopkeeper</button>
+                     : <button className="btn primary" type="button" onClick={() => setShowAccountSwitcherDialog(true)}>Link Shopkeeper Account</button>
+                   : null}
+             </section>
         ) : view === 'orders' ? (
           <section className="view customer-page customer-order-page" aria-label="Previous orders">
             <div className="page-heading">
