@@ -16,7 +16,7 @@ async function request(path, options = {}) {
   return payload
 }
 function emit(event, user) {
-  currentUser = user || null
+  currentUser = user ? { linkedAccount: null, ...user } : null
   for (const callback of listeners) callback(event, { user: currentUser })
 }
 export const supabase = {
@@ -24,7 +24,7 @@ export const supabase = {
     async getSession() {
       try {
         const payload = await request('/api/auth/me')
-        currentUser = payload.user || null
+        currentUser = payload.user ? { ...payload.user, linkedAccount: payload.linkedAccount || null } : null
         return { data: { session: currentUser ? { user: currentUser } : null }, error: null }
       } catch (error) { return { data: { session: null }, error } }
     },
@@ -35,8 +35,9 @@ export const supabase = {
     async signInWithPassword({ phone, password, expectedRole = 'customer' }) {
       try {
         const payload = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, expectedRole }) })
-        emit('SIGNED_IN', payload.user)
-        return { data: { user: payload.user, session: { user: payload.user } }, error: null }
+        const user = { ...payload.user, linkedAccount: payload.linkedAccount || null }
+        emit('SIGNED_IN', user)
+        return { data: { user, session: { user } }, error: null }
       } catch (error) { return { data: { user: null, session: null }, error } }
     },
     async signUp({ phone, password, options }) {
@@ -44,6 +45,22 @@ export const supabase = {
         const payload = await request('/api/auth/register', { method: 'POST', body: JSON.stringify({ phone, password, fullName: options?.data?.full_name || '' }) })
         if (payload.user) emit('SIGNED_IN', payload.user)
         return { data: { user: payload.user, session: payload.user ? { user: payload.user } : null }, error: null }
+      } catch (error) { return { data: { user: null, session: null }, error } }
+    },
+    async linkAccount({ phone, password, expectedRole }) {
+      try {
+        const payload = await request('/api/auth/link-account', { method: 'POST', body: JSON.stringify({ phone, password, expectedRole }) })
+        const user = { ...payload.user, linkedAccount: payload.linkedAccount || null }
+        emit('ACCOUNT_SWITCHED', user)
+        return { data: { user, session: { user } }, error: null }
+      } catch (error) { return { data: { user: null, session: null }, error } }
+    },
+    async switchAccount() {
+      try {
+        const payload = await request('/api/auth/switch-account', { method: 'POST', body: '{}' })
+        const user = { ...payload.user, linkedAccount: payload.linkedAccount || null }
+        emit('ACCOUNT_SWITCHED', user)
+        return { data: { user, session: { user } }, error: null }
       } catch (error) { return { data: { user: null, session: null }, error } }
     },
     async signOut() {
