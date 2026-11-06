@@ -19,11 +19,11 @@ export default function AccountSwitcherDialog({ currentUser, onClose, onLinked }
         setError(result.error.message || 'Could not link this account. Please try again.')
         return
       }
-      setPassword('')
       onLinked(result.data.user)
     } catch (submitError) {
       setError(submitError?.message || 'Could not link this account. Please try again.')
     } finally {
+      setPassword('')
       setBusy(false)
     }
   }
