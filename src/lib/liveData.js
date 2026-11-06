@@ -30,6 +30,7 @@ export async function fetchDailySales(date) { return request('/api/reports/daily
 export async function fetchRestockSuggestions() { return request('/api/reports/restock') }
 export async function createLiveOffer(details) { return request('/api/offers', { method: 'POST', body: JSON.stringify(details) }) }
 export async function updateLiveOffer(offerId, active) { return request('/api/offers/' + encodeURIComponent(offerId), { method: 'PATCH', body: JSON.stringify({ active }) }) }
+export async function deleteLiveOffer(offerId) { return request('/api/offers/' + encodeURIComponent(offerId), { method: 'DELETE' }) }
 export async function updateLiveStoreSettings(details) { return request('/api/store-settings', { method: 'PATCH', body: JSON.stringify(details) }) }
 export async function validateLiveOffer(code, subtotal) { return request('/api/offers/validate', { method: 'POST', body: JSON.stringify({ code, subtotal }) }) }
 export async function downloadLiveReport(type, date) {
