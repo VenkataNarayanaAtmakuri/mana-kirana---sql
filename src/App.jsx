@@ -935,7 +935,7 @@ function App() {
       <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
-        {supabaseConfigured ? <p className="note live-note"><span className="store-status-dot" aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
+        {supabaseConfigured ? <p className="note live-note"><span className={"store-status-dot" + (realtimeConnected ? "" : " is-connecting")} aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
         {authUser?.role === 'customer' && customerWelcome && (
           <section className="customer-welcome" role="status" aria-live="polite">
@@ -980,8 +980,6 @@ function App() {
               <div><span className="shopping-info-icon">+</span><span><strong>Need another item?</strong><small>Request it below; the shop confirms the price</small></span></div>
             </div>
             <OrderMode channel={channel} onChange={selectChannel} />
-            
-            
             {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Ready to order?</strong> Sign in once to check out with your account mobile number. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in</button></p>}
             {liveLoading && products.length === 0 ? <div className="empty-results"><strong>Loading the shared catalogue…</strong></div> : <div className="shop-layout" id="shop-products">
               <section className="catalog-section" aria-label="Products">
