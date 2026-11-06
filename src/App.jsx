@@ -935,7 +935,7 @@ function App() {
       <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
-        {supabaseConfigured ? <p className="note live-note"><strong>Shared live mode.</strong> Catalogue, stock, orders, queue times, and account updates use your PostgreSQL API{realtimeConnected ? ' · live sync connected' : ' · connecting to live sync'}. Payments remain demos; phone + password sign-in is enabled.</p> : <p className="note"><strong>Prototype with sample data.</strong> Orders and catalogue changes stay in this browser only. Payments are demos; order updates appear in this app, but no account message is sent.</p>}
+        {supabaseConfigured ? <p className="note live-note"><span className={"store-status-dot" + (realtimeConnected ? "" : " is-connecting")} aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
         {authUser?.role === 'customer' && customerWelcome && (
           <section className="customer-welcome" role="status" aria-live="polite">
@@ -964,17 +964,23 @@ function App() {
           </section>
         ) : (
           <section className="view customer-page" aria-label="Customer ordering">
-            <div className="page-heading">
-              <h1>Order from Venkata Kusuma Haranth General Stores</h1>
-              <p className="muted">No app to install. Choose online pre-order or entrance QR ordering.</p>
+            <div className="page-heading store-hero">
+              <div className="store-hero-copy">
+                <span className="store-hero-kicker">YOUR NEIGHBOURHOOD KIRANA</span>
+                <h1>Everyday groceries, made easier.</h1>
+                <p>Shop trusted essentials from Venkata Kusuma Haranth General Stores, then pick them up at a time that works for you.</p>
+                <a className="store-hero-cta" href="#shop-products">Browse groceries <ArrowRight size={17} /></a>
+              </div>
+              <div className="store-hero-art" aria-hidden="true"><span className="store-hero-orbit" /><span className="store-hero-bag">🛍️</span><span className="store-hero-tag">LOCAL<br />PICKUP</span></div>
             </div>
             {supabaseConfigured && authUser && customerMessages.length > 0 && <section className="account-messages" aria-label="Order updates"><div><h2>Your order updates</h2><span>Live messages for this account</span></div><ul>{customerMessages.slice(0, 4).map((message) => <li key={message.id}><span>{message.body}</span><time>{new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(message.created_at))}</time></li>)}</ul></section>}
-            <div className="order-rules-notice"><strong>Minimum confirmed order: more than ₹200.</strong> Items waiting for a shopkeeper’s price do not count toward this minimum. Orders are scheduled in 15-minute pickup slots based on the queue.</div>
-            <div className="custom-request-notice"><strong>Can’t find an item?</strong> Add a request by name and quantity. Its price is not included in the confirmed subtotal; the shopkeeper will set the rate, and you can settle that amount at the shop desk.</div>
+            <div className="shopping-info-bar" aria-label="Pickup and ordering information">
+              <div><span className="shopping-info-icon">₹</span><span><strong>Order above ₹200</strong><small>Pending-price requests don’t count</small></span></div>
+              <div><span className="shopping-info-icon">15m</span><span><strong>Quick store pickup</strong><small>Slots are scheduled every 15 minutes</small></span></div>
+              <div><span className="shopping-info-icon">+</span><span><strong>Need another item?</strong><small>Request it below; the shop confirms the price</small></span></div>
+            </div>
             <OrderMode channel={channel} onChange={selectChannel} />
-            <SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} products={products} onLoadItems={addSavedItemsToCart} />
-            {supabaseConfigured && authUser && profile?.role === 'customer' && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
-            {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Want to place an order?</strong> Sign in with your mobile number and password, then enter that same number at checkout. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Customer Sign In</button></p>}
+            {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Ready to order?</strong> Sign in once to check out with your account mobile number. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in</button></p>}
             {liveLoading && products.length === 0 ? <div className="empty-results"><strong>Loading the shared catalogue…</strong></div> : <div className="shop-layout" id="shop-products">
               <section className="catalog-section" aria-label="Products">
                 <div className="catalog-toolbar">
@@ -1000,6 +1006,13 @@ function App() {
               </section>
               <aside className="desktop-cart"><CartPanel {...cartPanelProps()} /></aside>
             </div>}
+            <div className="customer-secondary-tools">
+              <details className="saved-list-disclosure">
+                <summary><span>Your regular shopping lists</span><small>Save a basket for a quick repeat order</small></summary>
+                <div className="saved-list-disclosure-body"><SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} products={products} onLoadItems={addSavedItemsToCart} /></div>
+              </details>
+              {supabaseConfigured && authUser && profile?.role === 'customer' && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
+            </div>
           </section>
         )}
       </main>
