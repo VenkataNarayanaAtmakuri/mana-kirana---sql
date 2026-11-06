@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, CircleHelp } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
+import AccountSwitcherDialog from './components/AccountSwitcherDialog.jsx'
 import ChangePasswordDialog from './components/ChangePasswordDialog.jsx'
 import EditProfileDialog from './components/EditProfileDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
@@ -73,7 +74,7 @@ function calculateReadyAt(currentOrders) {
   return new Date(Math.max(nextAfterQueue, nextAfterScheduled)).toISOString()
 }
 
-function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onEditProfile, onChangePassword, onSignOut }) {
+function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, profileRole, onCustomerSignIn, onShopkeeperSignIn, onEditProfile, onChangePassword, onAddAccount, onSwitchAccount, accountSwitchBusy, onSignOut }) {
   return (
     <header className="top">
       <div className="wrap top-inner">
@@ -94,7 +95,14 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
           </button>
         </div>
         {supabaseConfigured && (authUser
-          ? <div className="account-actions"><button className="account-button" type="button" onClick={onEditProfile}>Edit profile</button><button className="account-button" type="button" onClick={onChangePassword}>Change password</button><button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button></div>
+          ? <div className="account-actions">
+              <button className="account-button account-switch-button" type="button" disabled={accountSwitchBusy} onClick={authUser.linkedAccount ? onSwitchAccount : onAddAccount}>
+                {accountSwitchBusy ? 'Switching…' : authUser.linkedAccount ? 'Switch to ' + (authUser.linkedAccount.role === 'shopkeeper' ? 'Shopkeeper' : 'Customer') : 'Link other account'}
+              </button>
+              <button className="account-button" type="button" onClick={onEditProfile}>Edit profile</button>
+              <button className="account-button" type="button" onClick={onChangePassword}>Change password</button>
+              <button className="account-button" type="button" onClick={onSignOut}>Sign out · {authUser.phone?.slice(-4)}</button>
+            </div>
           : <div className="account-actions"><button className="account-button" type="button" onClick={onCustomerSignIn}>Customer Sign In</button><button className="account-button shopkeeper-signin-button" type="button" onClick={onShopkeeperSignIn}>Shopkeeper Sign In</button></div>)}
       </div>
     </header>
@@ -173,6 +181,8 @@ function App() {
   const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false)
   const [showEditProfileDialog, setShowEditProfileDialog] = useState(false)
   const [showSignOutDialog, setShowSignOutDialog] = useState(false)
+  const [showAccountSwitcherDialog, setShowAccountSwitcherDialog] = useState(false)
+  const [accountSwitchBusy, setAccountSwitchBusy] = useState(false)
   const [signOutBusy, setSignOutBusy] = useState(false)
   const [signOutError, setSignOutError] = useState('')
   const [liveLoading, setLiveLoading] = useState(supabaseConfigured)
@@ -230,9 +240,13 @@ function App() {
         setOrders([])
         setCustomerMessages([])
       }
-      if (event === 'SIGNED_IN') {
+      if (event === 'SIGNED_IN' || event === 'ACCOUNT_SWITCHED') {
         const name = String(nextUser?.full_name || '').trim()
-        setCustomerWelcome(nextUser?.role === 'customer' ? name || 'there' : '')
+        setProfile(null)
+        setProfileLoading(true)
+        setOrders([])
+        setCustomerMessages([])
+        setCustomerWelcome(event === 'SIGNED_IN' && nextUser?.role === 'customer' ? name || 'there' : '')
         setCustomerName(nextUser?.full_name || '')
         setPhone(nextUser?.phone || '')
         setAlternatePickupPhone('')
@@ -281,6 +295,36 @@ function App() {
     if (updatedProfile.role === 'customer') setCustomerWelcome(updatedProfile.full_name || 'there')
     setShowEditProfileDialog(false)
     setNotice('Profile information updated.')
+  }
+
+  function handleAccountLinked(user) {
+    setShowAccountSwitcherDialog(false)
+    selectView(user?.role === 'shopkeeper' ? 'dashboard' : 'shop')
+    setNotice('Linked your ' + (user?.role === 'shopkeeper' ? 'shopkeeper' : 'customer') + ' account. Use the header button to switch back.')
+  }
+
+  async function handleAccountSwitch() {
+    if (!authUser?.linkedAccount || accountSwitchBusy) return
+    setAccountSwitchBusy(true)
+    setLiveError('')
+    try {
+      const result = await supabase.auth.switchAccount()
+      if (result?.error) {
+        setLiveError('Could not switch accounts: ' + result.error.message)
+        return
+      }
+      const nextUser = result?.data?.user
+      if (!nextUser) {
+        setLiveError('Could not switch accounts. Please sign in again.')
+        return
+      }
+      selectView(nextUser.role === 'shopkeeper' ? 'dashboard' : 'shop')
+      setNotice('Switched to your ' + (nextUser.role === 'shopkeeper' ? 'shopkeeper' : 'customer') + ' account.')
+    } catch (error) {
+      setLiveError('Could not switch accounts: ' + (error?.message || 'Please try again.'))
+    } finally {
+      setAccountSwitchBusy(false)
+    }
   }
 
   async function handleConfirmedSignOut() {
@@ -927,7 +971,7 @@ function App() {
 
   return (
     <div className="app-shell min-h-screen" id="top">
-      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
+      <AppHeader view={view} onViewChange={selectView} itemCount={itemCount} pendingCount={pendingCount} authUser={authUser} profileRole={profile?.role} onCustomerSignIn={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }} onShopkeeperSignIn={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }} onEditProfile={() => setShowEditProfileDialog(true)} onChangePassword={() => setShowChangePasswordDialog(true)} onAddAccount={() => setShowAccountSwitcherDialog(true)} onSwitchAccount={handleAccountSwitch} accountSwitchBusy={accountSwitchBusy} onSignOut={() => { setSignOutError(''); setShowSignOutDialog(true) }} />
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><span className={"store-status-dot" + (realtimeConnected ? "" : " is-connecting")} aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
@@ -944,8 +988,10 @@ function App() {
           </section>
         )}
         {view === 'dashboard' ? (
-          !supabaseConfigured || profile?.role === 'shopkeeper'
-            ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
+          profileLoading
+            ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
+            : !supabaseConfigured || profile?.role === 'shopkeeper'
+              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
             : <section className="access-gate"><h1>Shopkeeper sign-in</h1><p>{profileLoading ? 'Checking this account…' : authUser ? 'This account is registered as a customer. Ask the project owner to grant shopkeeper access, then sign in again.' : 'Sign in with the shopkeeper phone account to manage orders, stock, rates, and categories.'}</p>{!profileLoading && (authUser ? <button className="btn" type="button" onClick={() => { setSignOutError(''); setShowSignOutDialog(true) }}>Sign out</button> : <button className="btn primary" type="button" onClick={() => { setAuthDialogRole('shopkeeper'); setShowAuthDialog(true) }}>Sign in as Shopkeeper</button>)}</section>
         ) : view === 'orders' ? (
           <section className="view customer-page customer-order-page" aria-label="Previous orders">
@@ -1084,6 +1130,7 @@ function App() {
         </div>
       )}
       {showAuthDialog && <AuthDialog role={authDialogRole} onClose={() => setShowAuthDialog(false)} />}
+      {showAccountSwitcherDialog && authUser && <AccountSwitcherDialog currentUser={authUser} onClose={() => setShowAccountSwitcherDialog(false)} onLinked={handleAccountLinked} />}
       {showChangePasswordDialog && <ChangePasswordDialog onClose={() => setShowChangePasswordDialog(false)} />}
       {showEditProfileDialog && authUser && <EditProfileDialog authUser={authUser} onClose={() => setShowEditProfileDialog(false)} onUpdated={handleProfileUpdated} />}
     </div>
