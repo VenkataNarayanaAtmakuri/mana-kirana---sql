@@ -2,12 +2,15 @@ import { Router } from 'express'
 import argon2 from 'argon2'
 import { rateLimit } from 'express-rate-limit'
 import { pool } from './db.js'
+import { randomInt } from 'node:crypto'
 
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
 const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
 const accountLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many account-link attempts. Try again later.' } })
 const profileUpdateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile update attempts. Try again later.' } })
+const pickupPinLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many pickup PIN attempts. Try again later.' } })
+const offerValidationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many offer checks. Try again later.' } })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
   if (digits.length === 10 && /^[6-9]/.test(digits)) return '+91' + digits
@@ -20,6 +23,53 @@ const requireAuth = (req, res, next) => req.session.user ? next() : res.status(4
 const requireShopkeeper = (req, res, next) => req.session.user?.role === 'shopkeeper' ? next() : res.status(403).json({ error: 'Shopkeeper access required.' })
 const regenerateSession = (req) => new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()))
 const saveSession = (req) => new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()))
+
+const WEEKDAYS = ['mon','tue','wed','thu','fri','sat','sun']
+const DEFAULT_STORE_HOURS = Object.fromEntries(WEEKDAYS.map((day) => [day, { open: '08:00', close: '21:00', closed: false }]))
+const validTime = (value) => typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
+function normalizeStoreHours(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const result = {}
+  for (const day of WEEKDAYS) {
+    const row = value[day]
+    if (!row || typeof row.closed !== 'boolean' || !validTime(row.open) || !validTime(row.close) || row.close <= row.open) return null
+    result[day] = { open: row.open, close: row.close, closed: row.closed }
+  }
+  return result
+}
+function normalizeDateOnly(value) {
+  if (value == null || value === '') return null
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
+  const parsed = new Date(value + 'T00:00:00.000Z')
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? undefined : value
+}
+async function readStoreStatus(queryable = pool) {
+  const { rows } = await queryable.query('SELECT hours,status_override,closed_message FROM store_settings WHERE id=1')
+  const setting = rows[0] || { hours: DEFAULT_STORE_HOURS, status_override: 'auto', closed_message: 'The shop is closed right now.' }
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date())
+  const value = (type) => parts.find((part) => part.type === type)?.value || ''
+  const day = ({ Mon: 'mon', Tue: 'tue', Wed: 'wed', Thu: 'thu', Fri: 'fri', Sat: 'sat', Sun: 'sun' })[value('weekday')] || 'mon'
+  const today = setting.hours?.[day] || DEFAULT_STORE_HOURS[day]
+  const now = value('hour') + ':' + value('minute')
+  const inHours = !today.closed && now >= today.open && now < today.close
+  const acceptingOrders = setting.status_override === 'open' || (setting.status_override === 'auto' && inHours)
+  const message = setting.status_override === 'closed'
+    ? setting.closed_message || 'The shop is closed today.'
+    : acceptingOrders
+      ? setting.status_override === 'open' ? 'Open now · temporary override' : 'Open now · closes at ' + today.close + ' IST'
+      : today.closed
+        ? 'Closed today · check the opening hours'
+        : 'Closed now · opens at ' + today.open + ' IST'
+  return { acceptingOrders, message, hours: setting.hours || DEFAULT_STORE_HOURS, statusOverride: setting.status_override || 'auto', closedMessage: setting.closed_message || '' }
+}
+function roundMoney(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100 }
+async function findActiveOffer(queryable, code) {
+  const { rows } = await queryable.query(
+    'SELECT id,title,code,discount_percent,minimum_order FROM offers WHERE code=$1 AND active=true AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now()) FOR SHARE',
+    [code],
+  )
+  return rows[0] || null
+}
 
 router.get('/health', async (_req, res) => {
   await pool.query('SELECT 1')
@@ -166,12 +216,65 @@ router.patch('/profile/:id', profileUpdateLimiter, requireAuth, async (req, res)
     throw error
   }
 })
-router.get('/catalog', async (_req, res) => {
-  const [categories, products] = await Promise.all([
+router.get('/catalog', async (req, res) => {
+  const shopkeeperView = req.session.user?.role === 'shopkeeper'
+  const expiryFilter = shopkeeperView ? '' : " AND (p.expires_on IS NULL OR p.expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date)"
+  const offerFilter = shopkeeperView ? '' : 'WHERE active=true AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())'
+  const [categories, products, offers, storeStatus] = await Promise.all([
     pool.query('SELECT id,name FROM categories WHERE active=true ORDER BY name'),
-    pool.query('SELECT p.*, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.active=true AND c.active=true ORDER BY p.name'),
+    pool.query('SELECT p.*, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.active=true AND c.active=true' + expiryFilter + ' ORDER BY p.name'),
+    pool.query('SELECT id,title,code,discount_percent,minimum_order,active,starts_at,ends_at FROM offers ' + offerFilter + ' ORDER BY created_at DESC'),
+    readStoreStatus(),
   ])
-  res.json({ categories: categories.rows, products: products.rows })
+  res.json({ categories: categories.rows, products: products.rows, offers: offers.rows, storeStatus })
+})
+router.patch('/store-settings', requireAuth, requireShopkeeper, async (req, res) => {
+  const hours = normalizeStoreHours(req.body.hours)
+  const statusOverride = String(req.body.statusOverride || '')
+  const closedMessage = String(req.body.closedMessage || '').trim()
+  if (!hours) return res.status(400).json({ error: 'Set valid opening and closing times for all seven days.' })
+  if (!['auto','open','closed'].includes(statusOverride)) return res.status(400).json({ error: 'Choose automatic hours, temporarily open, or closed.' })
+  if (closedMessage.length > 180) return res.status(400).json({ error: 'The closure message must be 180 characters or fewer.' })
+  await pool.query(
+    'INSERT INTO store_settings(id,hours,status_override,closed_message) VALUES(1,$1::jsonb,$2,$3) ON CONFLICT(id) DO UPDATE SET hours=EXCLUDED.hours,status_override=EXCLUDED.status_override,closed_message=EXCLUDED.closed_message,updated_at=now()',
+    [JSON.stringify(hours), statusOverride, closedMessage || 'The shop is closed right now.'],
+  )
+  res.json(await readStoreStatus())
+})
+router.post('/offers/validate', offerValidationLimiter, async (req, res) => {
+  const code = String(req.body.code || '').trim().toUpperCase()
+  const subtotal = Number(req.body.subtotal)
+  if (!/^[A-Z0-9-]{3,24}$/.test(code)) return res.status(400).json({ error: 'Enter a valid offer code.' })
+  if (!Number.isFinite(subtotal) || subtotal <= 200) return res.status(400).json({ error: 'Add priced items worth more than ₹200 before applying an offer.' })
+  const offer = await findActiveOffer(pool, code)
+  if (!offer) return res.status(404).json({ error: 'This offer code is invalid, expired, or inactive.' })
+  if (subtotal < Number(offer.minimum_order)) return res.status(400).json({ error: 'This offer requires a confirmed subtotal of at least ₹' + Number(offer.minimum_order).toFixed(0) + '.' })
+  const discountAmount = roundMoney(subtotal * Number(offer.discount_percent) / 100)
+  if (roundMoney(subtotal - discountAmount) <= 200) return res.status(400).json({ error: 'The discount would bring the order below the ₹200 minimum. Add more items to use this code.' })
+  res.json({ id: offer.id, title: offer.title, code: offer.code, discountPercent: Number(offer.discount_percent), minimumOrder: Number(offer.minimum_order), discountAmount, discountedTotal: roundMoney(subtotal - discountAmount) })
+})
+router.post('/offers', requireAuth, requireShopkeeper, async (req, res) => {
+  const title = String(req.body.title || '').trim()
+  const code = String(req.body.code || '').trim().toUpperCase()
+  const discountPercent = Number(req.body.discountPercent)
+  const minimumOrder = Number(req.body.minimumOrder)
+  const endsAt = req.body.endsAt ? new Date(req.body.endsAt) : null
+  if (title.length < 2 || title.length > 100) return res.status(400).json({ error: 'Offer title must be between 2 and 100 characters.' })
+  if (!/^[A-Z0-9-]{3,24}$/.test(code)) return res.status(400).json({ error: 'Use 3–24 letters, numbers, or hyphens for the offer code.' })
+  if (!Number.isFinite(discountPercent) || discountPercent < 1 || discountPercent > 80) return res.status(400).json({ error: 'Discount must be between 1% and 80%.' })
+  if (!Number.isFinite(minimumOrder) || minimumOrder <= 200 || minimumOrder > 100000) return res.status(400).json({ error: 'Minimum order must be greater than ₹200.' })
+  if (req.body.endsAt && (Number.isNaN(endsAt.getTime()) || endsAt <= new Date())) return res.status(400).json({ error: 'Offer expiry must be a future date and time.' })
+  const { rows } = await pool.query(
+    'INSERT INTO offers(title,code,discount_percent,minimum_order,ends_at) VALUES($1,$2,$3,$4,$5) RETURNING id,title,code,discount_percent,minimum_order,active,starts_at,ends_at',
+    [title, code, discountPercent, minimumOrder, endsAt?.toISOString() || null],
+  )
+  res.status(201).json(rows[0])
+})
+router.patch('/offers/:id', requireAuth, requireShopkeeper, async (req, res) => {
+  if (typeof req.body.active !== 'boolean') return res.status(400).json({ error: 'Choose whether this offer is active.' })
+  const { rows } = await pool.query('UPDATE offers SET active=$1 WHERE id=$2 RETURNING id,title,code,discount_percent,minimum_order,active,starts_at,ends_at', [req.body.active, req.params.id])
+  if (!rows[0]) return res.status(404).json({ error: 'Offer not found.' })
+  res.json(rows[0])
 })
 router.post('/categories', requireAuth, requireShopkeeper, async (req, res) => {
   const name = String(req.body.name || '').trim()
@@ -200,16 +303,19 @@ router.delete('/categories/:id', requireAuth, requireShopkeeper, async (req, res
 })
 router.post('/products', requireAuth, requireShopkeeper, async (req, res) => {
   const { name, local = '', categoryId, unit = 'piece', price, stock = 0 } = req.body
-  if (!String(name || '').trim() || !categoryId || !Number.isFinite(Number(price)) || Number(price) <= 0 || !Number.isFinite(Number(stock)) || Number(stock) < 0) return res.status(400).json({ error: 'Valid product name, category, price, and stock are required.' })
+  const expiresOn = normalizeDateOnly(req.body.expiresOn)
+  if (!String(name || '').trim() || !categoryId || !Number.isFinite(Number(price)) || Number(price) <= 0 || !Number.isFinite(Number(stock)) || Number(stock) < 0 || expiresOn === undefined) return res.status(400).json({ error: 'Valid product name, category, price, stock, and expiry date are required.' })
   const category = String(req.body.category || '').toLowerCase()
   const emoji = category.includes('dairy') ? '🥛' : category.includes('fresh') ? '🥬' : category.includes('snack') ? '🥨' : '🛍️'
-  const { rows } = await pool.query('INSERT INTO products(name,local,category_id,unit,price,stock,step,emoji,tint,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id', [String(name).trim(), String(local), categoryId, unit, Number(price), Number(stock), unit === 'kg' ? 0.01 : 1, emoji, 'new', 'Added by the shopkeeper'])
+  const { rows } = await pool.query('INSERT INTO products(name,local,category_id,unit,price,stock,step,emoji,tint,note,expires_on) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id', [String(name).trim(), String(local), categoryId, unit, Number(price), Number(stock), unit === 'kg' ? 0.01 : 1, emoji, 'new', 'Added by the shopkeeper', expiresOn])
   res.status(201).json(rows[0])
 })
 router.patch('/products/:id', requireAuth, requireShopkeeper, async (req, res) => {
   const price = Number(req.body.price), stock = Number(req.body.stock)
-  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(stock) || stock < 0) return res.status(400).json({ error: 'Price must be positive and stock cannot be negative.' })
-  const { rows } = await pool.query('UPDATE products SET price=$1,stock=$2,updated_at=now() WHERE id=$3 AND active=true RETURNING id', [price, stock, req.params.id])
+  const hasExpiry = Object.prototype.hasOwnProperty.call(req.body, 'expiresOn')
+  const expiresOn = hasExpiry ? normalizeDateOnly(req.body.expiresOn) : null
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(stock) || stock < 0 || (hasExpiry && expiresOn === undefined)) return res.status(400).json({ error: 'Price, stock, and expiry date are invalid.' })
+  const { rows } = await pool.query('UPDATE products SET price=$1,stock=$2,expires_on=CASE WHEN $3::boolean THEN $4::date ELSE expires_on END,updated_at=now() WHERE id=$5 AND active=true RETURNING id', [price, stock, hasExpiry, expiresOn, req.params.id])
   if (!rows[0]) return res.status(404).json({ error: 'Product not found.' })
   res.json(rows[0])
 })
@@ -230,7 +336,7 @@ router.get('/orders', requireAuth, async (req, res) => {
   conditions.push('NOT EXISTS (SELECT 1 FROM customer_messages hidden WHERE hidden.order_id=o.id AND hidden.customer_id=o.customer_id AND hidden.body=$' + params.length + ')')
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
   const { rows } = await pool.query(`SELECT o.*, COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where} GROUP BY o.id ORDER BY o.created_at DESC`, params)
-  res.json(rows)
+  res.json(rows.map((row) => req.session.user.role === 'shopkeeper' ? { ...row, pickup_pin: null } : row))
 })
 router.delete('/orders/:id', requireAuth, async (req, res) => {
   const client = await pool.connect()
@@ -267,6 +373,8 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
 })
 router.post('/orders', requireAuth, async (req, res) => {
   const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, payment, items } = req.body
+  const offerCode = String(req.body.offerCode || '').trim().toUpperCase()
+  if (offerCode && !/^[A-Z0-9-]{3,24}$/.test(offerCode)) return res.status(400).json({ error: 'Enter a valid offer code.' })
   const phone = phoneE164(rawPhone)
   const pickupText = String(rawPickupPhone || '').trim()
   const pickupPhone = pickupText ? phoneE164(pickupText) : null
@@ -276,27 +384,40 @@ router.post('/orders', requireAuth, async (req, res) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    let total = 0, hasCustom = false
+    const storeStatus = await readStoreStatus(client)
+    if (!storeStatus.acceptingOrders) throw new Error(storeStatus.message || 'The shop is closed right now.')
+    let subtotal = 0, hasCustom = false
     const normalized = []
     for (const item of items) {
       const qty = Number(item.quantity)
       if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) throw new Error('Invalid item quantity.')
       if (item.custom) { hasCustom = true; normalized.push({ ...item, quantity: qty, price: null, line_total: null }); continue }
-      const product = await client.query('SELECT id,name,price,stock,unit,emoji FROM products WHERE id=$1 AND active=true FOR UPDATE', [item.product_id])
+      const product = await client.query("SELECT id,name,price,stock,unit,emoji FROM products WHERE id=$1 AND active=true AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date) FOR UPDATE", [item.product_id])
       if (!product.rows[0]) throw new Error('A selected product is no longer available.')
       const p = product.rows[0]
       if (Number(p.stock) < qty) throw new Error(`${p.name} does not have enough stock.`)
       const line = Math.round(Number(p.price) * qty * 100) / 100
-      total += line
+      subtotal += line
       normalized.push({ product_id: p.id, name: p.name, emoji: p.emoji, quantity: qty, unit: p.unit, price: Number(p.price), line_total: line, custom: false })
     }
-    total = Math.round(total * 100) / 100
-    if (total <= 200) throw new Error('The confirmed item subtotal must be more than ₹200.')
+    subtotal = roundMoney(subtotal)
+    if (subtotal <= 200) throw new Error('The confirmed item subtotal must be more than ₹200.')
+    let discountAmount = 0
+    let appliedOffer = null
+    if (offerCode) {
+      appliedOffer = await findActiveOffer(client, offerCode)
+      if (!appliedOffer) throw new Error('This offer code is invalid, expired, or inactive.')
+      if (subtotal < Number(appliedOffer.minimum_order)) throw new Error('This offer requires a confirmed subtotal of at least ₹' + Number(appliedOffer.minimum_order).toFixed(0) + '.')
+      discountAmount = roundMoney(subtotal * Number(appliedOffer.discount_percent) / 100)
+    }
+    const total = roundMoney(subtotal - discountAmount)
+    if (total <= 200) throw new Error('The order total after discount must remain above ₹200.')
     const queue = await client.query("SELECT COALESCE(MAX(estimated_ready_at),now()) AS latest FROM orders WHERE status IN ('pending','preparing')")
     const count = await client.query("SELECT count(*)::int AS n FROM orders WHERE status IN ('pending','preparing') AND estimated_ready_at IS NULL")
     const latest = new Date(queue.rows[0].latest).getTime()
     const ready = new Date(Math.max(Date.now() + (count.rows[0].n + 1) * 15 * 60000, latest + 15 * 60000))
-    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,total,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,order_number,estimated_ready_at,status', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, hasCustom ? 'pickup' : payment === 'upi_demo' ? 'upi_demo' : 'pickup', total, ready.toISOString()])
+    const pickupPin = String(randomInt(0, 10000)).padStart(4, '0')
+    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, hasCustom ? 'pickup' : payment === 'upi_demo' ? 'upi_demo' : 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
     for (const item of normalized) {
       if (!item.custom) await client.query('UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
@@ -306,6 +427,23 @@ router.post('/orders', requireAuth, async (req, res) => {
     res.status(201).json(order.rows[0])
   } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message || 'Could not place order.' }) } finally { client.release() }
 })
+router.post('/orders/:id/collect', pickupPinLimiter, requireAuth, requireShopkeeper, async (req, res) => {
+  const pickupPin = String(req.body.pickupPin || '')
+  if (!/^\d{4}$/.test(pickupPin)) return res.status(400).json({ error: 'Enter the customer’s 4-digit pickup PIN.' })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
+    const order = rows[0]
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found.' }) }
+    if (order.status !== 'ready') throw new Error('Only ready orders can be collected.')
+    if (order.pickup_pin !== pickupPin) throw new Error('That 4-digit pickup PIN does not match.')
+    await client.query("UPDATE orders SET status='collected',updated_at=now() WHERE id=$1", [order.id])
+    await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [order.customer_id, order.id, 'Your order has been collected. Thank you!'])
+    await client.query('COMMIT')
+    res.json({ id: order.id, status: 'collected' })
+  } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
+})
 router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, res) => {
   const next = String(req.body.status || '')
   const client = await pool.connect()
@@ -314,14 +452,15 @@ router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, r
     const { rows } = await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
     const order = rows[0]
     if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found.' }) }
-    const allowed = { pending: ['preparing','rejected'], preparing: ['ready'], ready: ['collected'] }
+    const allowed = { pending: ['preparing','rejected'], preparing: ['ready'], ready: [] }
+    if (next === 'collected') throw new Error('Verify the customer’s 4-digit pickup PIN to complete collection.')
     if (!(allowed[order.status] || []).includes(next)) throw new Error('Invalid order status transition.')
     if (next === 'rejected') {
       const items = await client.query('SELECT product_id,quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL', [order.id])
       for (const item of items.rows) await client.query('UPDATE products SET stock=stock+$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
     }
     await client.query('UPDATE orders SET status=$1,updated_at=now() WHERE id=$2', [next, order.id])
-    const body = next === 'preparing' ? 'Your order is being prepared.' : next === 'ready' ? 'Your order is ready for pickup.' : next === 'collected' ? 'Your order has been collected. Thank you!' : 'Your order was declined. Please contact the shop.'
+    const body = next === 'preparing' ? 'Your order is being prepared.' : next === 'ready' ? 'Your order is ready for pickup. Your 4-digit pickup PIN is ' + order.pickup_pin + '. Show it to the shopkeeper when collecting.' : next === 'collected' ? 'Your order has been collected. Thank you!' : 'Your order was declined. Please contact the shop.'
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [order.customer_id, order.id, body])
     await client.query('COMMIT'); res.json({ id: order.id, status: next })
   } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
@@ -337,7 +476,7 @@ router.patch('/order-items/:id/price', requireAuth, requireShopkeeper, async (re
     if (!item || !item.custom_request || item.price_confirmed || ['rejected','collected'].includes(item.status)) throw new Error('This requested item cannot be priced.')
     const line = Math.round(rate * Number(item.quantity) * 100) / 100
     await client.query('UPDATE order_items SET price=$1,line_total=$2,price_confirmed=true WHERE id=$3', [rate,line,item.id])
-    await client.query('UPDATE orders SET total=(SELECT COALESCE(SUM(line_total),0) FROM order_items WHERE order_id=$1),updated_at=now() WHERE id=$1', [item.oid])
+    await client.query('UPDATE orders SET subtotal=(SELECT COALESCE(SUM(line_total),0) FROM order_items WHERE order_id=$1),total=(SELECT COALESCE(SUM(line_total),0) FROM order_items WHERE order_id=$1)-discount_amount,updated_at=now() WHERE id=$1', [item.oid])
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [item.customer_id,item.oid,`Price confirmed for ${item.item_name}: ₹${rate.toFixed(2)} per ${item.unit}.`])
     await client.query('COMMIT'); res.json({ id: item.id, price: rate, line_total: line })
   } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
@@ -358,6 +497,71 @@ router.get('/messages', requireAuth, async (req, res) => {
     LIMIT 25
   `, [req.session.user.id])
   res.json(rows)
+})
+router.get('/reports/restock', requireAuth, requireShopkeeper, async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT p.id,p.name,p.local,p.unit,p.stock,p.step,
+      COALESCE(SUM(item.quantity) FILTER (WHERE order_row.id IS NOT NULL),0)::numeric AS sold_quantity_30d
+    FROM products p
+    LEFT JOIN order_items item ON item.product_id=p.id
+    LEFT JOIN orders order_row ON order_row.id=item.order_id AND order_row.status='collected' AND order_row.updated_at>=now()-interval '30 days'
+    WHERE p.active=true
+    GROUP BY p.id
+    ORDER BY p.name
+  `)
+  const suggestions = rows.map((row) => {
+    const soldQuantity30d = Number(row.sold_quantity_30d) || 0
+    const stock = Number(row.stock) || 0
+    const step = Number(row.step) || 1
+    const targetStock = soldQuantity30d * 14 / 30
+    const suggestedQuantity = soldQuantity30d > 0 && stock < targetStock
+      ? Math.ceil((targetStock - stock) / step) * step
+      : 0
+    return { id: row.id, name: row.name, local: row.local, unit: row.unit, stock, soldQuantity30d, targetStock: roundMoney(targetStock), suggestedQuantity: roundMoney(suggestedQuantity) }
+  }).filter((row) => row.suggestedQuantity > 0)
+  res.json(suggestions)
+})
+router.get('/reports/export.csv', requireAuth, requireShopkeeper, async (req, res) => {
+  const csvCell = (value) => {
+    let text = String(value ?? '')
+    if (/^[\s\uFEFF]*[=+\-@]/.test(text)) text = "'" + text
+    return '"' + text.replace(/"/g, '""') + '"'
+  }
+  const sendCsv = (filename, rows) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"')
+    res.send('\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n'))
+  }
+  const type = String(req.query.type || '')
+  if (type === 'inventory') {
+    const { rows } = await pool.query(`
+      SELECT p.name,p.local,c.name AS category,p.stock,p.unit,p.price,p.expires_on
+      FROM products p JOIN categories c ON c.id=p.category_id
+      WHERE p.active=true ORDER BY c.name,p.name
+    `)
+    return sendCsv('mana-kirana-inventory.csv', [
+      ['Item','Telugu name','Category','Stock','Unit','Rate (INR)','Expiry date'],
+      ...rows.map((row) => [row.name,row.local,row.category,row.stock,row.unit,row.price,row.expires_on]),
+    ])
+  }
+  if (type !== 'sales') return res.status(400).json({ error: 'Choose a sales or inventory export.' })
+  const date = normalizeDateOnly(String(req.query.date || ''))
+  if (!date) return res.status(400).json({ error: 'Choose a valid report date.' })
+  const { rows } = await pool.query(`
+    SELECT o.order_number,to_char(o.updated_at AT TIME ZONE 'Asia/Kolkata','YYYY-MM-DD HH24:MI') AS collected_at,
+      o.customer_name,o.customer_phone,o.pickup_phone,
+      COALESCE(string_agg(item.item_name || ' x' || item.quantity || ' ' || item.unit,'; ' ORDER BY item.created_at),'') AS items,
+      o.subtotal,o.discount_amount,o.offer_code,o.total
+    FROM orders o LEFT JOIN order_items item ON item.order_id=o.id
+    WHERE o.status='collected'
+      AND o.updated_at >= (($1::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
+      AND o.updated_at < ((($1::date)+1)::timestamp AT TIME ZONE 'Asia/Kolkata')
+    GROUP BY o.id ORDER BY o.updated_at
+  `, [date])
+  return sendCsv('mana-kirana-sales-' + date + '.csv', [
+    ['Order','Collected at (IST)','Customer','Account phone','Pickup phone','Items','Subtotal (INR)','Offer code','Discount (INR)','Total (INR)'],
+    ...rows.map((row) => ['MK-' + String(row.order_number).padStart(6,'0'),row.collected_at,row.customer_name,row.customer_phone,row.pickup_phone,row.items,row.subtotal,row.offer_code,row.discount_amount,row.total]),
+  ])
 })
 router.get('/reports/daily-sales', requireAuth, requireShopkeeper, async (req, res) => {
   const date = String(req.query.date || '')
