@@ -2082,3 +2082,11 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .customer-history-pickup-pin { grid-template-columns: 1fr; }
   .customer-history-pickup-pin strong { grid-row: auto; grid-column: auto; }
 }
+
+
+.offer-manager-list li { flex-wrap: wrap; }
+.offer-manager-list li > span { flex: 1; }
+.offer-manager-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; flex-shrink: 0; }
+.offer-manager-actions .btn { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.offer-delete-button { border-color: #e8c1bb; color: #a23a2e; background: #fff5f3; }
+.offer-delete-button:hover { border-color: #d28b81; background: #ffebe8; }
