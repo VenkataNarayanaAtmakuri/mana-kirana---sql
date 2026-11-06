@@ -41,7 +41,8 @@ function RequestedItemRate({ order, item, onSetRate }) {
   )
 }
 
-function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetRequestedItemRate }) {
+function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetRequestedItemRate, liveMode }) {
+  const [pickupPin, setPickupPin] = useState('')
   const meta = STATUS_META[order.status] || STATUS_META.pending
   const StatusIcon = meta.icon
   const primaryAction = order.status === 'pending'
@@ -78,11 +79,17 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
           </div>
         ))}
       </div>
+      {order.status === 'ready' && liveMode && (
+        <form className="pickup-pin-form" onSubmit={(event) => { event.preventDefault(); if (/^\d{4}$/.test(pickupPin)) onUpdate(order.id, 'collected', pickupPin) }}>
+          <label htmlFor={'pickup-pin-' + order.dbId}>Customer’s 4-digit pickup PIN</label>
+          <div><input id={'pickup-pin-' + order.dbId} type="text" inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" maxLength={4} value={pickupPin} onChange={(event) => setPickupPin(event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="0000" aria-label={'Four-digit pickup PIN for ' + order.id} required /><button className="advance-button" type="submit" disabled={!/^\d{4}$/.test(pickupPin)}><ArrowDownToLine size={15} />Verify & collect</button></div>
+        </form>
+      )}
       <div className="order-card-bottom">
-        <div><span>{order.payment}</span><strong>{formatMoney(order.total)}</strong>{unpricedCount > 0 && <small className="order-total-note">Confirmed subtotal · {unpricedCount} requested {unpricedCount === 1 ? 'item' : 'items'} awaiting rate</small>}</div>
+        <div><span>{order.payment}</span><strong>{formatMoney(order.total)}</strong>{order.discountAmount > 0 && <small className="order-total-note">Subtotal {formatMoney(order.subtotal)} · offer {order.offerCode} saved {formatMoney(order.discountAmount)}</small>}{unpricedCount > 0 && <small className="order-total-note">Confirmed subtotal · {unpricedCount} requested {unpricedCount === 1 ? 'item' : 'items'} awaiting rate</small>}</div>
         {(primaryAction || order.status === 'collected') && (
           <div className="order-actions">
-            {primaryAction && (
+            {primaryAction && (order.status !== 'ready' || !liveMode) && (
               <>
                 {order.status === 'pending' && (
                   <button className="reject-button" type="button" onClick={() => onUpdate(order.id, 'rejected')}><X size={15} /> Decline</button>
@@ -107,19 +114,21 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
 function InventoryRow({ product, onSave, onRemove }) {
   const [price, setPrice] = useState(String(product.price))
   const [stock, setStock] = useState(String(product.stock))
-  const changed = Number(price) !== product.price || Number(stock) !== product.stock
+  const [expiresOn, setExpiresOn] = useState(product.expiresOn || '')
+  const changed = Number(price) !== product.price || Number(stock) !== product.stock || expiresOn !== (product.expiresOn || '')
 
   useEffect(() => {
     setPrice(String(product.price))
     setStock(String(product.stock))
-  }, [product.price, product.stock])
+    setExpiresOn(product.expiresOn || '')
+  }, [product.price, product.stock, product.expiresOn])
 
   function save(event) {
     event.preventDefault()
     const nextPrice = Number(price)
     const nextStock = Number(stock)
     if (!Number.isFinite(nextPrice) || nextPrice <= 0 || !Number.isFinite(nextStock) || nextStock < 0) return
-    onSave(product.id, { price: nextPrice, stock: nextStock })
+    onSave(product.id, { price: nextPrice, stock: nextStock, expiresOn: expiresOn || null })
   }
 
   return (
@@ -137,6 +146,10 @@ function InventoryRow({ product, onSave, onRemove }) {
         <span>In stock · {product.unit}</span>
         <input type="number" min="0" step={product.unit === 'kg' ? '0.01' : 1} value={stock} onChange={(event) => setStock(event.target.value)} aria-label={'Stock quantity for ' + product.name} required />
       </label>
+      <label className="inventory-field expiry-field">
+        <span>Expires on</span>
+        <input type="date" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} aria-label={'Expiry date for ' + product.name} />
+      </label>
       <div className="inventory-actions">
         <button className="btn inventory-save" type="submit" disabled={!changed}><Save size={15} />Save</button>
         <button className="btn inventory-remove" type="button" onClick={() => onRemove(product.id)} aria-label={'Remove ' + product.name} title="Remove from customer catalogue"><Trash2 size={15} /><span>Remove</span></button>
@@ -152,6 +165,7 @@ function AddProductForm({ categories, onAddProduct }) {
   const [unit, setUnit] = useState('kg')
   const [price, setPrice] = useState('')
   const [stock, setStock] = useState('')
+  const [expiresOn, setExpiresOn] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -166,12 +180,13 @@ function AddProductForm({ categories, onAddProduct }) {
       setError('Enter an item name, category, positive rate, and stock quantity.')
       return
     }
-    const saved = await onAddProduct({ name: name.trim(), local: local.trim(), category: category.trim(), unit, price: parsedPrice, stock: parsedStock })
+    const saved = await onAddProduct({ name: name.trim(), local: local.trim(), category: category.trim(), unit, price: parsedPrice, stock: parsedStock, expiresOn: expiresOn || null })
     if (saved === false) return
     setName('')
     setLocal('')
     setPrice('')
     setStock('')
+    setExpiresOn('')
     setError('')
   }
 
@@ -185,6 +200,7 @@ function AddProductForm({ categories, onAddProduct }) {
         <label><span>Sold as</span><select value={unit} onChange={(event) => setUnit(event.target.value)}><option value="kg">Loose · kg</option><option value="pack">Pack</option><option value="dozen">Dozen</option><option value="500 g">500 g pack</option><option value="500 ml">500 ml pack</option><option value="200 g">200 g pack</option><option value="100 g">100 g pack</option></select></label>
         <label><span>Rate · ₹ / {unit}</span><input type="number" min="1" step="1" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="0" required /></label>
         <label><span>Opening stock · {unit}</span><input type="number" min="0" step={unit === 'kg' ? '0.01' : '1'} inputMode="decimal" value={stock} onChange={(event) => setStock(event.target.value)} placeholder="0" required /></label>
+        <label><span>Expiry date <small>optional</small></span><input type="date" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} /></label>
       </div>
       {error && <p className="inventory-error" role="alert">{error}</p>}
       <div className="add-product-actions"><small>Loose item stock can be recorded in 10 g increments.</small><button className="btn primary" type="submit"><Plus size={16} />Add item</button></div>
@@ -241,7 +257,7 @@ function makeDemoSalesReport(orders, date) {
   return { date, orderCount: collected.length, total: collected.reduce((sum, order) => sum + (Number(order.total) || 0), 0), topItems: [...itemTotals.values()].sort((a, b) => b.total - a.total).slice(0, 5) }
 }
 
-function DailySalesPanel({ orders, liveMode, onLoadDailySales }) {
+function DailySalesPanel({ orders, liveMode, onLoadDailySales, onExportReport }) {
   const [date, setDate] = useState(() => indiaDate(new Date()))
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -260,7 +276,7 @@ function DailySalesPanel({ orders, liveMode, onLoadDailySales }) {
   const visibleReport = liveMode ? report : demoReport
   return (
     <section className="daily-sales-section" aria-label="Daily sales summary">
-      <div className="orders-section-heading"><div><h2>Daily sales</h2><span>Orders marked collected on the selected date · India time</span></div><label htmlFor="daily-sales-date">Report date<input id="daily-sales-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label></div>
+      <div className="orders-section-heading"><div><h2>Daily sales</h2><span>Orders marked collected on the selected date · India time</span></div><label htmlFor="daily-sales-date">Report date<input id="daily-sales-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>{liveMode && <button className="btn csv-export-button" type="button" onClick={() => onExportReport('sales', date)}>Download sales CSV</button>}</div>
       {loading && <p className="daily-sales-status">Loading the sales summary…</p>}
       {error && <p className="daily-sales-error" role="alert">{error}</p>}
       {!loading && !error && visibleReport && <>
@@ -268,6 +284,139 @@ function DailySalesPanel({ orders, liveMode, onLoadDailySales }) {
         <div className="daily-sales-items"><h3>Top items</h3>{visibleReport.topItems?.length ? <ul>{visibleReport.topItems.map((item) => <li key={item.name + item.unit}><span>{item.name}</span><span>{formatQuantity(item.quantity, item.unit)} · {formatMoney(item.total)}</span></li>)}</ul> : <p>No collected item sales for this date.</p>}</div>
       </>}
       <p className="daily-sales-note">This summary uses the date an order was marked collected. Sample dashboard totals are calculated in this browser.</p>
+    </section>
+  )
+}
+
+
+function ExpiryAlerts({ products }) {
+  const today = indiaDate(new Date())
+  const todayTime = new Date(today + 'T00:00:00.000Z').getTime()
+  const alerts = products.filter((product) => product.expiresOn).map((product) => {
+    const expiryTime = new Date(product.expiresOn + 'T00:00:00.000Z').getTime()
+    return { ...product, daysLeft: Math.round((expiryTime - todayTime) / 86400000) }
+  }).filter((product) => product.daysLeft <= 30).sort((a, b) => a.daysLeft - b.daysLeft)
+  return (
+    <section className="expiry-alert-panel" aria-label="Expiry alerts">
+      <div className="expiry-alert-heading"><div><h3>Expiry alerts <span>{alerts.length}</span></h3><p>Products expiring in the next 30 days or already expired.</p></div></div>
+      {alerts.length ? <ul>{alerts.map((product) => <li key={product.id}><span><strong>{product.name}</strong><small>{product.daysLeft < 0 ? 'Expired ' + Math.abs(product.daysLeft) + ' days ago' : product.daysLeft === 0 ? 'Expires today' : 'Expires in ' + product.daysLeft + ' days'} · {product.expiresOn}</small></span><b className={product.daysLeft < 0 ? 'expiry-danger' : ''}>{formatQuantity(product.stock, product.unit)} in stock</b></li>)}</ul> : <p className="expiry-alert-clear">No dated products are close to expiry.</p>}
+    </section>
+  )
+}
+
+function RestockSuggestions({ liveMode, onLoadRestock }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!liveMode || !onLoadRestock) return undefined
+    let active = true
+    setLoading(true)
+    onLoadRestock().then((nextRows) => { if (active) setRows(nextRows) })
+      .catch((loadError) => { if (active) setError(loadError.message || 'Could not load restock suggestions.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [liveMode, onLoadRestock])
+  return (
+    <section className="restock-panel" aria-label="Restock suggestions">
+      <div className="expiry-alert-heading"><div><h3>Restock suggestions</h3><p>Based on collected sales from the last 30 days, aiming for 14 days of stock.</p></div></div>
+      {!liveMode ? <p className="expiry-alert-clear">Restock suggestions are available with live order history.</p> : loading ? <p className="daily-sales-status">Calculating recent item sales…</p> : error ? <p className="daily-sales-error" role="alert">{error}</p> : rows.length ? <ul>{rows.map((row) => <li key={row.id}><span><strong>{row.name}</strong><small>{formatQuantity(row.soldQuantity30d, row.unit)} sold in 30 days · {formatQuantity(row.stock, row.unit)} left</small></span><b>Add about {formatQuantity(row.suggestedQuantity, row.unit)}</b></li>)}</ul> : <p className="expiry-alert-clear">Current stock covers recent sales for the next 14 days.</p>}
+    </section>
+  )
+}
+
+const STORE_DAYS = [
+  ['mon','Monday'],['tue','Tuesday'],['wed','Wednesday'],['thu','Thursday'],['fri','Friday'],['sat','Saturday'],['sun','Sunday'],
+]
+const DEFAULT_HOURS = Object.fromEntries(STORE_DAYS.map(([key]) => [key, { open: '08:00', close: '21:00', closed: false }]))
+
+function StoreHoursPanel({ storeStatus, onSave }) {
+  const [hours, setHours] = useState(() => storeStatus?.hours || DEFAULT_HOURS)
+  const [statusOverride, setStatusOverride] = useState(storeStatus?.statusOverride || 'auto')
+  const [closedMessage, setClosedMessage] = useState(storeStatus?.closedMessage || 'The shop is closed right now.')
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const storeHoursKey = JSON.stringify(storeStatus?.hours || DEFAULT_HOURS)
+  useEffect(() => {
+    if (dirty) return
+    setHours(storeStatus?.hours || DEFAULT_HOURS)
+    setStatusOverride(storeStatus?.statusOverride || 'auto')
+    setClosedMessage(storeStatus?.closedMessage || 'The shop is closed right now.')
+  }, [storeHoursKey, storeStatus?.statusOverride, storeStatus?.closedMessage, dirty])
+  async function submit(event) {
+    event.preventDefault()
+    setBusy(true)
+    const saved = await onSave({ hours, statusOverride, closedMessage })
+    if (saved) setDirty(false)
+    setBusy(false)
+  }
+  function updateDay(day, changes) {
+    setDirty(true)
+    setHours((current) => ({ ...current, [day]: { ...current[day], ...changes } }))
+  }
+  return (
+    <section className="store-hours-panel" aria-label="Store opening hours">
+      <div className="store-hours-heading"><div><h2>Store hours and holiday status</h2><p>Customer ordering follows these hours in India time.</p></div><span className={'store-status-pill ' + (storeStatus?.acceptingOrders ? 'is-open' : 'is-closed')}>{storeStatus?.acceptingOrders ? 'Open now' : 'Closed now'}</span></div>
+      <form onSubmit={submit}>
+        <label className="store-override-label"><span>Order availability</span><select value={statusOverride} onChange={(event) => { setStatusOverride(event.target.value); setDirty(true) }}><option value="auto">Follow weekly hours</option><option value="open">Temporarily open all day</option><option value="closed">Closed / holiday</option></select></label>
+        <label className="store-closed-message"><span>Closure message</span><input maxLength={180} value={closedMessage} onChange={(event) => { setClosedMessage(event.target.value); setDirty(true) }} placeholder="e.g. Closed for a local holiday" /></label>
+        <div className="store-week-hours">{STORE_DAYS.map(([key,label]) => {
+          const row = hours[key] || DEFAULT_HOURS[key]
+          return <div className="store-day-row" key={key}>
+            <strong>{label}</strong>
+            <label className="store-day-open"><input type="checkbox" checked={!row.closed} onChange={(event) => updateDay(key, { closed: !event.target.checked })} />Open</label>
+            <label><span>Opens</span><input type="time" value={row.open} disabled={row.closed} onChange={(event) => updateDay(key, { open: event.target.value })} required /></label>
+            <label><span>Closes</span><input type="time" value={row.close} disabled={row.closed} onChange={(event) => updateDay(key, { close: event.target.value })} required /></label>
+          </div>
+        })}</div>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save store hours'}</button>
+      </form>
+    </section>
+  )
+}
+
+function OfferManager({ offers, onCreateOffer, onToggleOffer }) {
+  const [title, setTitle] = useState('')
+  const [code, setCode] = useState('')
+  const [discountPercent, setDiscountPercent] = useState('10')
+  const [minimumOrder, setMinimumOrder] = useState('250')
+  const [endsAt, setEndsAt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      const saved = await onCreateOffer({ title: title.trim(), code: code.trim().toUpperCase(), discountPercent: Number(discountPercent), minimumOrder: Number(minimumOrder), endsAt: endsAt ? new Date(endsAt).toISOString() : null })
+      if (!saved) { setError('Could not save the offer. Review the message at the top of the page.'); return }
+      setTitle('')
+      setCode('')
+      setDiscountPercent('10')
+      setMinimumOrder('250')
+      setEndsAt('')
+    } catch (submitError) { setError(submitError?.message || 'Could not save this offer.') }
+    finally { setBusy(false) }
+  }
+  return (
+    <section className="offer-manager" aria-label="Offers and coupons">
+      <div className="store-hours-heading"><div><h2>Offers and coupons</h2><p>Create a code customers can apply to their confirmed basket.</p></div><span className="offer-count">{offers.length} saved</span></div>
+      <form className="offer-create-form" onSubmit={submit}>
+        <label><span>Offer title</span><input value={title} onChange={(event) => setTitle(event.target.value)} minLength={2} maxLength={100} placeholder="Weekend savings" required /></label>
+        <label><span>Coupon code</span><input value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24))} pattern="[A-Z0-9-]{3,24}" placeholder="SAVE10" required /></label>
+        <label><span>Discount · %</span><input type="number" min="1" max="80" step="1" value={discountPercent} onChange={(event) => setDiscountPercent(event.target.value)} required /></label>
+        <label><span>Minimum basket · ₹</span><input type="number" min="201" max="100000" step="1" value={minimumOrder} onChange={(event) => setMinimumOrder(event.target.value)} required /></label>
+        <label><span>Expires at <small>optional</small></span><input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Create offer'}</button>
+      </form>
+      {error && <p className="inventory-error" role="alert">{error}</p>}
+      {offers.length ? <ul className="offer-manager-list">{offers.map((offer) => {
+        const expired = offer.ends_at && new Date(offer.ends_at).getTime() <= Date.now()
+        return <li key={offer.id}>
+          <span><strong>{offer.title}</strong><small><code>{offer.code}</code> · {offer.discountPercent}% off · minimum {formatMoney(offer.minimumOrder)}{offer.ends_at ? ' · expires ' + new Date(offer.ends_at).toLocaleString('en-IN') : ''}</small></span>
+          <button className="btn" type="button" disabled={Boolean(expired && !offer.active)} onClick={() => onToggleOffer(offer.id, !offer.active)}>{expired ? offer.active ? 'Pause expired' : 'Expired' : offer.active ? 'Pause' : 'Activate'}</button>
+        </li>
+      })}</ul> : <p className="expiry-alert-clear">No offers yet.</p>}
     </section>
   )
 }
@@ -294,7 +443,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onSaveStoreSettings, onExportReport }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const visibleOrders = useMemo(() => {
@@ -336,6 +485,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
         <button type="button" aria-pressed={section === 'orders'} className={section === 'orders' ? 'active' : ''} onClick={() => setSection('orders')}>Orders <span>{orders.length}</span></button>
         <button type="button" aria-pressed={section === 'sales'} className={section === 'sales' ? 'active' : ''} onClick={() => setSection('sales')}>Daily sales</button>
         <button type="button" aria-pressed={section === 'inventory'} className={section === 'inventory' ? 'active' : ''} onClick={() => setSection('inventory')}>Stock and prices <span>{products.length}</span></button>
+        <button type="button" aria-pressed={section === 'store'} className={section === 'store' ? 'active' : ''} onClick={() => setSection('store')}>Store & offers</button>
       </div>
 
       {section === 'orders' ? <section className="orders-section">
@@ -348,19 +498,24 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
           ))}
         </div>
         <div className="order-list">
-          {visibleOrders.length ? visibleOrders.map((order) => <OrderCard key={order.id} order={order} onUpdate={onUpdateOrder} onDeleteOrder={onDeleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={onSetRequestedItemRate} />) : (
+          {visibleOrders.length ? visibleOrders.map((order) => <OrderCard key={order.id} order={order} onUpdate={onUpdateOrder} onDeleteOrder={onDeleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={onSetRequestedItemRate} liveMode={liveMode} />) : (
             <div className="no-orders"><span>🌱</span><strong>Nothing in this view right now</strong><p>New customer orders will appear here as soon as they’re placed.</p></div>
           )}
         </div>
-      </section> : section === 'sales' ? <DailySalesPanel orders={orders} liveMode={liveMode} onLoadDailySales={onLoadDailySales} /> : <section className="inventory-section">
-        <div className="orders-section-heading"><div><h2>Stock and prices</h2><span>Changes update the customer catalogue and new bills.</span></div><span className="live-indicator"><i />{liveMode ? 'Shared catalogue' : 'Saved in this browser'}</span></div>
+      </section> : section === 'sales' ? <DailySalesPanel orders={orders} liveMode={liveMode} onLoadDailySales={onLoadDailySales} onExportReport={onExportReport} /> : section === 'inventory' ? <section className="inventory-section">
+        <div className="orders-section-heading"><div><h2>Stock and prices</h2><span>Changes update the customer catalogue and new bills.</span></div><div className="inventory-header-actions"><span className="live-indicator"><i />{liveMode ? 'Shared catalogue' : 'Saved in this browser'}</span>{liveMode && <button className="btn csv-export-button" type="button" onClick={() => onExportReport('inventory')}>Download inventory CSV</button>}</div></div>
         <LowStockAlerts products={products} />
+        <ExpiryAlerts products={products} />
+        <RestockSuggestions liveMode={liveMode} onLoadRestock={onLoadRestock} />
         <CategoryManager categories={categories} onAddCategory={onAddCategory} onRemoveCategory={onRemoveCategory} />
         <AddProductForm categories={categories} onAddProduct={onAddProduct} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
           <div className="inventory-list-heading"><strong>Catalogue</strong><span>{products.length} items · quantity is measured in each item’s selling unit</span></div>
           {products.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} />)}
         </div>
+      </section> : <section className="store-tools-section">
+        <StoreHoursPanel storeStatus={storeStatus} onSave={onSaveStoreSettings} />
+        <OfferManager offers={offers} onCreateOffer={onCreateOffer} onToggleOffer={onToggleOffer} />
       </section>}
     </section>
   )

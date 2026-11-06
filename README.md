@@ -22,7 +22,7 @@ Create a new, empty database in your managed PostgreSQL provider. Do not reuse o
 
 The schema is for a new database. Do not run it against production data without reviewing the SQL and taking a backup.
 
-For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number.
+For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend.
 
 ## 2. Configure the backend
 
@@ -99,12 +99,16 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 
 - `GET /api/health`
 - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `GET /api/auth/me`, `POST /api/auth/logout`
-- `GET /api/catalog`
-- `GET /api/orders`, `POST /api/orders` (account mobile required; optional alternate pickup mobile), `PATCH /api/orders/:id/status`
+- `GET /api/catalog` (catalogue, current offers, and store availability)
+- `GET /api/orders`, `POST /api/orders` (account mobile required; optional alternate pickup mobile; creates a four-digit pickup PIN)
+- `PATCH /api/orders/:id/status`, `POST /api/orders/:id/collect` (shopkeeper must verify the customer's four-digit pickup PIN)
+- `POST /api/offers/validate`, `POST /api/offers`, `PATCH /api/offers/:id`
+- `PATCH /api/store-settings`
+- `GET /api/reports/daily-sales`, `GET /api/reports/restock`, `GET /api/reports/export.csv?type=sales|inventory`
 - `PATCH /api/order-items/:id/price`
 - `GET /api/messages`
 - `POST /api/categories`, `DELETE /api/categories/:id`
-- `POST /api/products`, `PATCH /api/products/:id`, `DELETE /api/products/:id`
+- `POST /api/products`, `PATCH /api/products/:id`, `DELETE /api/products/:id` (optional expiry date)
 - `GET /api/profile/:id`, `PATCH /api/profile/:id` (edit your name and sign-in mobile; changing the mobile requires your current password)
 
 The old Supabase realtime channels are replaced with 5-second polling. This is a simple first implementation; WebSockets can be added later if needed.

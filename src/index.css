@@ -1971,3 +1971,114 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .account-switch-button { margin-right: auto; }
   .account-switch-dialog { max-height: calc(100vh - 24px); overflow: auto; }
 }
+
+
+
+/* Six shop features */
+.store-status-banner {
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+  border: 1px solid #cfe4d2; border-radius: 14px; background: #f1f8f2;
+}
+.store-status-banner.is-closed { border-color: #ead7b7; background: #fff8ea; }
+.store-status-indicator { min-width: 56px; padding: 5px 8px; border-radius: 999px; color: #fff; background: #438753; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-align: center; }
+.store-status-banner.is-closed .store-status-indicator { background: #a66a26; }
+.store-status-banner strong { color: var(--ink); }
+.store-status-banner p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.public-offers { display: grid; grid-template-columns: 180px 1fr; align-items: center; gap: 16px; padding: 16px; border: 1px solid #e8dfbf; border-radius: 16px; background: linear-gradient(110deg,#fff9e9,#fffdf7); }
+.public-offers h2 { margin: 0; font-size: 20px; }
+.public-offers ul { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.public-offers li { min-width: 145px; display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #eadfbe; border-radius: 11px; background: #fff; }
+.public-offers li strong { color: #9a641d; font-size: 16px; }
+.public-offers li span { font-size: 12px; }
+.public-offers li code { width: max-content; padding: 2px 6px; border-radius: 5px; color: var(--primary); background: #eef7ef; font-weight: 800; }
+.public-offers li small { color: var(--muted); font-size: 10px; }
+
+.offer-code-form { display: grid; gap: 5px; margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.offer-code-form > label { font-size: 12px; font-weight: 700; }
+.offer-code-form > div { display: flex; gap: 7px; }
+.offer-code-form input { min-width: 0; min-height: 38px; flex: 1; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-family: var(--font-mono); text-transform: uppercase; }
+.offer-code-form button { flex: none; }
+.offer-code-error { margin: 0; color: var(--warn); font-size: 12px; }
+.offer-code-applied { display: flex; justify-content: space-between; gap: 8px; margin: 0; color: var(--primary); font-size: 12px; font-weight: 700; }
+.offer-code-applied button { border: 0; color: var(--muted); background: transparent; text-decoration: underline; }
+.bill-summary .bill-discount strong, .bill-summary .bill-discount > span { color: var(--primary); }
+.store-closed-checkout { margin: 4px 0; padding: 9px 10px; border-radius: 8px; color: #885a20; background: #fff5e2; font-size: 12px; }
+
+.customer-pickup-pin { display: grid; justify-items: start; gap: 3px; margin: 8px 0; padding: 10px 12px; border: 1px dashed #91bd99; border-radius: 10px; background: #f2f8f2; }
+.customer-pickup-pin span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.customer-pickup-pin strong { color: var(--primary); font-family: var(--font-mono); font-size: 26px; letter-spacing: .2em; }
+.customer-pickup-pin small { color: var(--muted); font-size: 11px; }
+.customer-history-pickup-pin { grid-template-columns: 1fr auto; align-items: center; }
+.customer-history-pickup-pin strong { grid-row: 1 / span 2; grid-column: 2; }
+.customer-order-discount { margin: 6px 0; color: var(--primary); font-size: 12px; }
+.pickup-pin-form { display: grid; gap: 6px; margin: 2px 0 8px; padding: 10px; border: 1px solid #d4e7d6; border-radius: 9px; background: #f4faf4; }
+.pickup-pin-form > label { color: var(--muted); font-size: 11px; font-weight: 700; }
+.pickup-pin-form > div { display: flex; gap: 7px; }
+.pickup-pin-form input { width: 104px; min-height: 36px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-family: var(--font-mono); font-size: 17px; letter-spacing: .2em; text-align: center; }
+.pickup-pin-form button { min-height: 36px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 7px; font-size: 12px; }
+
+.expiry-alert-panel, .restock-panel, .store-hours-panel, .offer-manager { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.expiry-alert-heading, .store-hours-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.expiry-alert-heading h3, .store-hours-heading h2 { margin: 0; font-size: 19px; }
+.expiry-alert-heading p, .store-hours-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.expiry-alert-heading h3 span, .offer-count { margin-left: 5px; padding: 2px 7px; border-radius: 999px; color: #80521d; background: #fff1d8; font-size: 11px; }
+.expiry-alert-panel ul, .restock-panel ul, .offer-manager-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.expiry-alert-panel li, .restock-panel li, .offer-manager-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.expiry-alert-panel li > span, .restock-panel li > span, .offer-manager-list li > span { min-width: 0; display: grid; gap: 2px; }
+.expiry-alert-panel li small, .restock-panel li small, .offer-manager-list li small { color: var(--muted); font-size: 11px; }
+.expiry-alert-panel li b, .restock-panel li b { color: #9a641d; font-size: 12px; text-align: right; }
+.expiry-alert-panel li b.expiry-danger { color: var(--warn); }
+.expiry-alert-clear { margin: 0; color: var(--muted); font-size: 12px; }
+.inventory-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.csv-export-button { white-space: nowrap; }
+
+.store-tools-section { display: grid; gap: 16px; }
+.store-status-pill { padding: 5px 9px; border-radius: 999px; color: #2d7140; background: #eef7ef; font-size: 11px; font-weight: 800; }
+.store-status-pill.is-closed { color: #8a5a1f; background: #fff4df; }
+.store-hours-panel form { display: grid; gap: 10px; }
+.store-override-label, .store-closed-message { display: grid; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.store-override-label select, .store-closed-message input { min-height: 38px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); font: inherit; }
+.store-week-hours { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.store-day-row { display: grid; grid-template-columns: minmax(90px,1fr) 75px minmax(95px,130px) minmax(95px,130px); align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.store-day-row > strong { font-size: 12px; }
+.store-day-row > label:not(.store-day-open) { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.store-day-row input[type="time"] { min-height: 34px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.store-day-open { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.offer-create-form { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: end; gap: 10px; }
+.offer-create-form label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.offer-create-form input { min-width: 0; min-height: 37px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: 13px; }
+.offer-manager-list code { width: max-content; padding: 2px 5px; border-radius: 4px; color: var(--primary); background: #eef7ef; font-family: var(--font-mono); }
+.offer-manager-list .btn { min-height: 34px; }
+.inventory-row { grid-template-columns: minmax(160px,1fr) minmax(95px,120px) minmax(110px,135px) minmax(130px,155px) auto; }
+.dashboard-tabs { flex-wrap: wrap; }
+
+
+@media (max-width: 900px) {
+  .inventory-row { grid-template-columns: minmax(160px,1fr) minmax(95px,130px) minmax(110px,140px); }
+  .inventory-row .inventory-product { grid-column: 1 / -1; }
+  .inventory-row .inventory-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .offer-create-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .public-offers { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .inventory-row { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .inventory-row .inventory-product, .inventory-row .inventory-actions { grid-column: 1 / -1; }
+  .inventory-actions { flex-wrap: wrap; }
+  .store-day-row { grid-template-columns: minmax(80px,1fr) 70px minmax(90px,1fr) minmax(90px,1fr); gap: 6px; }
+  .offer-create-form { grid-template-columns: 1fr 1fr; }
+  .orders-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .orders-section-heading > div { flex-wrap: wrap; }
+  .inventory-header-actions { width: 100%; justify-content: space-between; }
+}
+@media (max-width: 430px) {
+  .store-day-row { grid-template-columns: 1fr 1fr; }
+  .store-day-row > strong { grid-column: 1; }
+  .store-day-open { grid-column: 2; justify-self: end; }
+  .store-day-row > label:not(.store-day-open) { grid-row: auto; }
+  .offer-create-form { grid-template-columns: 1fr; }
+  .public-offers li { flex: 1 1 140px; }
+  .pickup-pin-form > div { flex-wrap: wrap; }
+  .pickup-pin-form button { flex: 1; }
+  .customer-history-pickup-pin { grid-template-columns: 1fr; }
+  .customer-history-pickup-pin strong { grid-row: auto; grid-column: auto; }
+}

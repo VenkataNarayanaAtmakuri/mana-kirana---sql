@@ -16,6 +16,9 @@ import {
   archiveLiveProduct,
   createLiveCategory,
   createLiveProduct,
+  createLiveOffer,
+  downloadLiveReport,
+  fetchRestockSuggestions,
   hideLiveOrder,
   fetchCustomerMessages,
   fetchDailySales,
@@ -28,7 +31,10 @@ import {
   subscribeToAccount,
   subscribeToCatalog,
   updateLiveOrderStatus,
+  updateLiveOffer,
   updateLiveProduct,
+  updateLiveStoreSettings,
+  validateLiveOffer,
 } from './lib/liveData.js'
 import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
 
@@ -172,6 +178,12 @@ function App() {
   const [products, setProducts] = useState(() => supabaseConfigured ? [] : readProducts())
   const [customCategories, setCustomCategories] = useState(() => supabaseConfigured ? [] : readCategories())
   const [remoteCategories, setRemoteCategories] = useState([])
+  const [offers, setOffers] = useState([])
+  const [storeStatus, setStoreStatus] = useState(null)
+  const [couponCode, setCouponCode] = useState('')
+  const [coupon, setCoupon] = useState(null)
+  const [couponError, setCouponError] = useState('')
+  const [couponBusy, setCouponBusy] = useState(false)
   const [customerMessages, setCustomerMessages] = useState([])
   const [authUser, setAuthUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -354,6 +366,7 @@ function App() {
       setCustomerMessages([])
       setCart({})
       setCustomItems([])
+      removeCoupon()
       setNotice('You are signed out.')
     } catch (error) {
       setSignOutError(error?.message || 'Could not verify the account or sign out. Please try again.')
@@ -366,6 +379,8 @@ function App() {
     const result = await fetchLiveCatalog()
     setRemoteCategories(result.categories)
     setProducts(result.products)
+    setOffers(result.offers || [])
+    setStoreStatus(result.storeStatus || null)
     setLiveError('')
     return result
   }, [])
@@ -387,6 +402,8 @@ function App() {
         if (active) {
           setRemoteCategories(result.categories)
           setProducts(result.products)
+          setOffers(result.offers || [])
+          setStoreStatus(result.storeStatus || null)
           setLiveError('')
         }
       } catch (error) {
@@ -524,12 +541,73 @@ function App() {
   }, [orders, demoHiddenOrders, orderViewRole])
   const pendingCount = visibleOrders.filter((order) => order.status === 'pending').length
   const cartTotal = Math.round(cartItems.reduce((total, item) => total + item.price * item.quantity, 0) * 100) / 100
+  const couponDiscount = coupon && cartTotal >= coupon.minimumOrder ? Math.round(cartTotal * coupon.discountPercent) / 100 : 0
+  const discountedTotal = Math.round((cartTotal - couponDiscount) * 100) / 100
   const successOrder = successOrderId ? orders.find((order) => order.id === successOrderId) || (successOrderSnapshot?.id === successOrderId ? successOrderSnapshot : null) : null
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesCategory = category === 'All items' || product.category === category
     const searchText = (product.name + ' ' + product.local + ' ' + product.category).toLowerCase()
     return matchesCategory && searchText.includes(search.trim().toLowerCase())
   }), [category, search, products])
+  const availableOffers = useMemo(() => offers.filter((offer) =>
+    offer.active && new Date(offer.starts_at).getTime() <= Date.now() && (!offer.ends_at || new Date(offer.ends_at).getTime() > Date.now())
+  ), [offers])
+
+  async function applyCoupon() {
+    if (!couponCode.trim()) { setCouponError('Enter an offer code first.'); return false }
+    setCouponBusy(true)
+    setCouponError('')
+    try {
+      const result = await validateLiveOffer(couponCode.trim(), cartTotal)
+      setCoupon(result)
+      setCouponCode(result.code)
+      setNotice(result.code + ' applied. You save ₹' + Number(result.discountAmount).toFixed(2) + '.')
+      return true
+    } catch (error) {
+      setCoupon(null)
+      setCouponError(error.message || 'Could not apply this offer code.')
+      return false
+    } finally { setCouponBusy(false) }
+  }
+
+  function removeCoupon() {
+    setCoupon(null)
+    setCouponCode('')
+    setCouponError('')
+  }
+
+  async function createOffer(details) {
+    try {
+      await createLiveOffer(details)
+      await refreshLiveCatalog()
+      setNotice('Offer ' + details.code.toUpperCase() + ' created.')
+      return true
+    } catch (error) { setLiveError(error.message); setNotice('Could not create offer: ' + error.message); return false }
+  }
+
+  async function toggleOffer(offerId, active) {
+    try {
+      await updateLiveOffer(offerId, active)
+      await refreshLiveCatalog()
+      setNotice(active ? 'Offer activated.' : 'Offer paused.')
+    } catch (error) { setLiveError(error.message); setNotice('Could not update offer: ' + error.message) }
+  }
+
+  async function saveStoreSettings(details) {
+    try {
+      await updateLiveStoreSettings(details)
+      await refreshLiveCatalog()
+      setNotice('Store hours and status saved.')
+      return true
+    } catch (error) { setLiveError(error.message); setNotice('Could not save store hours: ' + error.message); return false }
+  }
+
+  async function exportReport(type, date) {
+    try {
+      await downloadLiveReport(type, date)
+      setNotice(type === 'inventory' ? 'Inventory CSV downloaded.' : 'Sales CSV downloaded.')
+    } catch (error) { setLiveError(error.message); setNotice('Could not download CSV: ' + error.message) }
+  }
 
   function changeQuantity(productId, quantity) {
     const product = products.find((item) => item.id === productId)
@@ -742,8 +820,16 @@ function App() {
   async function submitOrder(event) {
     event.preventDefault()
     if (!cartItems.length && !customItems.length) return
+    if (supabaseConfigured && storeStatus && !storeStatus.acceptingOrders) {
+      setNotice(storeStatus.message || 'The shop is closed right now.')
+      return
+    }
     if (cartTotal <= MINIMUM_ORDER_VALUE) {
       setNotice('The confirmed item subtotal must be more than ₹200. Unpriced requests do not count toward the minimum.')
+      return
+    }
+    if (coupon && discountedTotal <= MINIMUM_ORDER_VALUE) {
+      setNotice('Add more items so the order remains above ₹200 after the offer.')
       return
     }
     if (supabaseConfigured && !authUser) {
@@ -780,16 +866,18 @@ function App() {
           pickupPhone: pickupDigits ? '+91' + pickupDigits : null,
           channel,
           payment: customItems.length ? 'pickup' : payment === 'upi' ? 'upi_demo' : 'pickup',
+          offerCode: coupon?.code || '',
           items: [
             ...cartItems.map((item) => ({ product_id: item.id, name: item.name, emoji: item.emoji, quantity: item.quantity, unit: item.unit, price: item.price, line_total: Math.round(item.price * item.quantity * 100) / 100, custom: false, price_confirmed: true })),
             ...customItems.map((item) => ({ product_id: null, name: item.name, emoji: '📝', quantity: item.quantity, unit: item.unit, price: null, line_total: null, custom: true, price_confirmed: false })),
           ],
         })
         const id = 'MK-' + String(result.order_number).padStart(6, '0')
-        setSuccessOrderSnapshot({ id, estimatedReadyAt: result.estimated_ready_at, status: 'pending' })
+        setSuccessOrderSnapshot({ id, estimatedReadyAt: result.estimated_ready_at, status: 'pending', pickupPin: result.pickup_pin, total: Number(result.total), subtotal: Number(result.subtotal), discountAmount: Number(result.discount_amount || 0) })
         setCart({})
         setCustomItems([])
         setAlternatePickupPhone('')
+        removeCoupon()
         setSuccessOrderId(id)
         setMobileCartOpen(false)
         await Promise.all([refreshLiveCatalog(), refreshLiveAccount()])
@@ -849,11 +937,11 @@ function App() {
     setNotice('Order ' + id + ' sent to ' + orderChannelLabel(channel).toLowerCase() + '.')
   }
 
-  async function updateOrder(id, status) {
+  async function updateOrder(id, status, pickupPin) {
     if (supabaseConfigured) {
       const existingOrder = orders.find((order) => order.id === id)
       try {
-        await updateLiveOrderStatus(existingOrder?.dbId, status)
+        await updateLiveOrderStatus(existingOrder?.dbId, status, pickupPin)
         await Promise.all([refreshLiveAccount(), status === 'rejected' ? refreshLiveCatalog() : Promise.resolve()])
         setNotice(status === 'rejected' ? 'Order declined.' : 'Order updated to ' + (status === 'preparing' ? 'Preparing' : status === 'ready' ? 'Ready for pickup' : 'Collected') + '.')
       } catch (error) { setLiveError(error.message); setNotice('Could not update order: ' + error.message) }
@@ -948,8 +1036,19 @@ function App() {
       items: cartItems,
       customItems,
       total: cartTotal,
+      discountAmount: couponDiscount,
+      discountedTotal,
+      coupon,
+      couponCode,
+      couponError,
+      couponBusy,
+      onCouponCodeChange: (value) => { setCouponCode(value); setCoupon(null); setCouponError('') },
+      onApplyCoupon: applyCoupon,
+      onRemoveCoupon: removeCoupon,
+      storeStatus,
+      storeAcceptingOrders: !supabaseConfigured || storeStatus?.acceptingOrders === true,
       onChange: changeFromCart,
-      onClear: () => { setCart({}); setCustomItems([]); setSuccessOrderId('') },
+      onClear: () => { setCart({}); setCustomItems([]); setSuccessOrderId(''); removeCoupon() },
       onRemoveCustomItem: removeCustomItem,
       customerName,
       onNameChange: setCustomerName,
@@ -991,7 +1090,7 @@ function App() {
           profileLoading
             ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
             : !supabaseConfigured || profile?.role === 'shopkeeper'
-              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} />
+              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onSaveStoreSettings={saveStoreSettings} onExportReport={exportReport} />
              : <section className="access-gate">
                <h1>Shopkeeper access</h1>
                <p>{!authUser
@@ -1030,6 +1129,14 @@ function App() {
               </div>
               <div className="store-hero-art" aria-hidden="true"><span className="store-hero-orbit" /><span className="store-hero-bag">🛍️</span><span className="store-hero-tag">LOCAL<br />PICKUP</span></div>
             </div>
+            {storeStatus && <section className={'store-status-banner ' + (storeStatus.acceptingOrders ? 'is-open' : 'is-closed')} aria-live="polite">
+              <span className="store-status-indicator">{storeStatus.acceptingOrders ? 'OPEN' : 'CLOSED'}</span>
+              <div><strong>{storeStatus.acceptingOrders ? 'Taking orders now' : 'Orders are paused'}</strong><p>{storeStatus.message}</p></div>
+            </section>}
+            {availableOffers.length > 0 && <section className="public-offers" aria-label="Available offers">
+              <div><p className="eyebrow">SAVE ON YOUR BASKET</p><h2>Offers at this store</h2></div>
+              <ul>{availableOffers.map((offer) => <li key={offer.id}><strong>{offer.discountPercent}% off</strong><span>{offer.title}</span><code>{offer.code}</code><small>On orders above {formatMoney(offer.minimumOrder)}</small></li>)}</ul>
+            </section>}
             {supabaseConfigured && authUser && customerMessages.length > 0 && <section className="account-messages" aria-label="Order updates"><div><h2>Your order updates</h2><span>Live messages for this account</span></div><ul>{customerMessages.slice(0, 4).map((message) => <li key={message.id}><span>{message.body}</span><time>{new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(message.created_at))}</time></li>)}</ul></section>}
             <div className="shopping-info-bar" aria-label="Pickup and ordering information">
               <div><span className="shopping-info-icon">₹</span><span><strong>Order above ₹200</strong><small>Pending-price requests don’t count</small></span></div>
@@ -1076,7 +1183,7 @@ function App() {
 
       {view === 'shop' && itemCount > 0 && (
         <button className="mobile-cart-bar" type="button" onClick={() => setMobileCartOpen(true)}>
-          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {customItems.length ? formatMoney(cartTotal) + ' confirmed + price pending' : formatMoney(cartTotal)}</span><strong>View bill <ArrowRight size={16} /></strong>
+          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {customItems.length ? formatMoney(discountedTotal) + ' confirmed + price pending' : formatMoney(discountedTotal)}</span><strong>View bill <ArrowRight size={16} /></strong>
         </button>
       )}
       {mobileCartOpen && (
