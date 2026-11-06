@@ -95,7 +95,7 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
           <button className="tab" type="button" aria-pressed={view === 'shop'} onClick={() => onViewChange('shop')}>
             Customer{itemCount > 0 && <span className="count">{itemCount}</span>}
           </button>
-          {supabaseConfigured && authUser && profileRole === 'customer' && <button className="tab" type="button" aria-pressed={view === 'orders'} onClick={() => onViewChange('orders')}>My Orders</button>}
+          {supabaseConfigured && authUser && <button className="tab" type="button" aria-pressed={view === 'orders'} onClick={() => onViewChange('orders')}>My Orders</button>}
           <button className="tab" type="button" aria-pressed={view === 'dashboard'} onClick={() => onViewChange('dashboard')}>
             Shopkeeper{pendingCount > 0 && <span className="count">{pendingCount}</span>}
           </button>
@@ -175,6 +175,7 @@ function App() {
   const [cart, setCart] = useState({})
   const [customItems, setCustomItems] = useState([])
   const [orders, setOrders] = useState(() => supabaseConfigured ? [] : readOrders())
+  const [customerOrders, setCustomerOrders] = useState([])
   const [products, setProducts] = useState(() => supabaseConfigured ? [] : readProducts())
   const [customCategories, setCustomCategories] = useState(() => supabaseConfigured ? [] : readCategories())
   const [remoteCategories, setRemoteCategories] = useState([])
@@ -250,6 +251,7 @@ function App() {
       if (!nextUser) {
         setProfile(null)
         setOrders([])
+        setCustomerOrders([])
         setCustomerMessages([])
       }
       if (event === 'SIGNED_IN' || event === 'ACCOUNT_SWITCHED') {
@@ -257,6 +259,7 @@ function App() {
         setProfile(null)
         setProfileLoading(true)
         setOrders([])
+        setCustomerOrders([])
         setCustomerMessages([])
         setCustomerWelcome(event === 'SIGNED_IN' && nextUser?.role === 'customer' ? name || 'there' : '')
         setCustomerName(nextUser?.full_name || '')
@@ -363,6 +366,7 @@ function App() {
       selectView('shop')
       setProfile(null)
       setOrders([])
+      setCustomerOrders([])
       setCustomerMessages([])
       setCart({})
       setCustomItems([])
@@ -387,10 +391,16 @@ function App() {
 
   const refreshLiveAccount = useCallback(async () => {
     if (!authUser) return
-    const [nextOrders, nextMessages] = await Promise.all([fetchLiveOrders(), fetchCustomerMessages()])
+    const isShopkeeper = profile?.role === 'shopkeeper'
+    const [nextOrders, nextCustomerOrders, nextMessages] = await Promise.all([
+      fetchLiveOrders(isShopkeeper ? 'shopkeeper' : 'customer'),
+      isShopkeeper ? fetchLiveOrders('customer') : Promise.resolve(null),
+      fetchCustomerMessages(),
+    ])
     setOrders(nextOrders)
+    setCustomerOrders(isShopkeeper ? nextCustomerOrders : nextOrders)
     setCustomerMessages(nextMessages)
-  }, [authUser])
+  }, [authUser, profile?.role])
 
   useEffect(() => {
     if (!supabaseConfigured) return undefined
@@ -451,24 +461,27 @@ function App() {
     let baseline = null
     const loadAccount = async () => {
       try {
-        const [nextOrders, nextMessages] = await Promise.all([fetchLiveOrders(), fetchCustomerMessages()])
+        const isShopkeeper = profile.role === 'shopkeeper'
+        const [nextOrders, nextCustomerOrders, nextMessages] = await Promise.all([
+          fetchLiveOrders(isShopkeeper ? 'shopkeeper' : 'customer'),
+          isShopkeeper ? fetchLiveOrders('customer') : Promise.resolve(null),
+          fetchCustomerMessages(),
+        ])
         if (!active) return
         if (baseline && notificationEnabledRef.current && typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
-          if (profile.role === 'shopkeeper') {
-            const previousOrderIds = new Set(baseline.orders)
-            const newOrder = nextOrders.find((order) => order.status === 'pending' && !previousOrderIds.has(order.dbId || order.id))
-            if (newOrder) showOrderNotification('New customer order', newOrder.id + ' from ' + newOrder.name)
-          } else {
-            const previousMessageIds = new Set(baseline.messages)
-            const newMessage = nextMessages.find((message) => !previousMessageIds.has(message.id))
-            if (newMessage) showOrderNotification('Order update', newMessage.body)
-          }
+          const previousOrderIds = new Set(baseline.orders)
+          const newOrder = isShopkeeper ? nextOrders.find((order) => order.status === 'pending' && !previousOrderIds.has(order.dbId || order.id)) : null
+          const previousMessageIds = new Set(baseline.messages)
+          const newMessage = nextMessages.find((message) => !previousMessageIds.has(message.id))
+          if (newOrder) showOrderNotification('New customer order', newOrder.id + ' from ' + newOrder.name)
+          else if (newMessage) showOrderNotification('Order update', newMessage.body)
         }
         baseline = {
           orders: nextOrders.map((order) => order.dbId || order.id),
           messages: nextMessages.map((message) => message.id),
         }
         setOrders(nextOrders)
+        setCustomerOrders(isShopkeeper ? nextCustomerOrders : nextOrders)
         setCustomerMessages(nextMessages)
       } catch (error) {
         if (active) setLiveError('Could not load account updates: ' + error.message)
@@ -535,15 +548,19 @@ function App() {
   const itemCount = cartItems.length + customItems.length
   const orderViewRole = supabaseConfigured ? profile?.role : (view === 'dashboard' ? 'shopkeeper' : 'customer')
   const visibleOrders = useMemo(() => {
-    if (supabaseConfigured) return orders
+    if (supabaseConfigured) {
+      return view === 'orders' && profile?.role === 'shopkeeper' ? customerOrders : orders
+    }
     const hiddenIds = new Set(demoHiddenOrders[orderViewRole] || [])
     return orders.filter((order) => !hiddenIds.has(order.id))
-  }, [orders, demoHiddenOrders, orderViewRole])
-  const pendingCount = visibleOrders.filter((order) => order.status === 'pending').length
+  }, [orders, customerOrders, demoHiddenOrders, orderViewRole, view, profile?.role])
+  const pendingCountOrders = supabaseConfigured && profile?.role === 'shopkeeper' ? orders : visibleOrders
+  const pendingCount = pendingCountOrders.filter((order) => order.status === 'pending').length
   const cartTotal = Math.round(cartItems.reduce((total, item) => total + item.price * item.quantity, 0) * 100) / 100
   const couponDiscount = coupon && cartTotal >= coupon.minimumOrder ? Math.round(cartTotal * coupon.discountPercent) / 100 : 0
   const discountedTotal = Math.round((cartTotal - couponDiscount) * 100) / 100
-  const successOrder = successOrderId ? orders.find((order) => order.id === successOrderId) || (successOrderSnapshot?.id === successOrderId ? successOrderSnapshot : null) : null
+  const successOrderSource = supabaseConfigured && profile?.role === 'shopkeeper' && view !== 'dashboard' ? customerOrders : orders
+  const successOrder = successOrderId ? successOrderSource.find((order) => order.id === successOrderId) || (successOrderSnapshot?.id === successOrderId ? successOrderSnapshot : null) : null
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesCategory = category === 'All items' || product.category === category
     const searchText = (product.name + ' ' + product.local + ' ' + product.category).toLowerCase()
@@ -959,8 +976,12 @@ function App() {
   }
 
   async function deleteOrder(id) {
-    const existingOrder = orders.find((order) => order.id === id)
-    const actorRole = supabaseConfigured ? profile?.role : (view === 'dashboard' ? 'shopkeeper' : 'customer')
+    const historyScope = supabaseConfigured
+      ? profile?.role === 'shopkeeper' && view === 'dashboard' ? 'shopkeeper' : 'customer'
+      : view === 'dashboard' ? 'shopkeeper' : 'customer'
+    const historyOrders = supabaseConfigured && historyScope === 'customer' && profile?.role === 'shopkeeper' ? customerOrders : orders
+    const existingOrder = historyOrders.find((order) => order.id === id)
+    const actorRole = historyScope
     if (!existingOrder || existingOrder.status !== 'collected' || deletingOrderId || !['customer', 'shopkeeper'].includes(actorRole)) return
     const otherSide = actorRole === 'customer' ? 'shopkeeper' : 'customer'
     const confirmed = window.confirm(
@@ -972,10 +993,13 @@ function App() {
     try {
       if (supabaseConfigured) {
         if (!existingOrder.dbId) throw new Error('Could not identify this order.')
-        await hideLiveOrder(existingOrder.dbId)
-        setOrders((current) => current.filter((order) => order.id !== id))
+        await hideLiveOrder(existingOrder.dbId, actorRole)
         if (actorRole === 'customer') {
+          setCustomerOrders((current) => current.filter((order) => order.id !== id))
+          if (profile?.role !== 'shopkeeper') setOrders((current) => current.filter((order) => order.id !== id))
           setCustomerMessages((current) => current.filter((message) => message.order_id !== existingOrder.dbId))
+        } else {
+          setOrders((current) => current.filter((order) => order.id !== id))
         }
         if (successOrderId === id) {
           setSuccessOrderId('')
@@ -1075,12 +1099,12 @@ function App() {
       <main className="wrap">
         {supabaseConfigured ? <p className="note live-note"><span className={"store-status-dot" + (realtimeConnected ? "" : " is-connecting")} aria-hidden="true" /><strong>Venkata Kusuma Haranth General Stores</strong><span>{realtimeConnected ? 'Live prices and availability' : 'Connecting to live prices'}</span></p> : <p className="note"><strong>Sample catalogue.</strong> Orders and changes stay in this browser only.</p>}
         {liveError && <p className="live-error" role="alert">{liveError}</p>}
-        {authUser?.role === 'customer' && customerWelcome && (
+        {authUser && view === 'shop' && (customerWelcome || profile?.role === 'shopkeeper') && (
           <section className="customer-welcome" role="status" aria-live="polite">
             <div className="customer-welcome-icon" aria-hidden="true">👋</div>
             <div className="customer-welcome-copy">
               <p className="customer-welcome-kicker">Glad you’re here</p>
-              <h2>Welcome, {customerWelcome}!</h2>
+              <h2>Welcome, {customerWelcome || profile?.full_name || authUser.full_name || 'there'}!</h2>
               <p>Your neighbourhood groceries are ready when you are.</p>
             </div>
             <button className="customer-welcome-dismiss" type="button" onClick={() => setCustomerWelcome('')} aria-label="Dismiss welcome message">×</button>
@@ -1114,9 +1138,9 @@ function App() {
               <h1>Previous orders</h1>
               <p className="muted">Review orders placed from this account. Delete buttons are available for collected orders.</p>
             </div>
-            {profileLoading ? <div className="empty-results"><strong>Loading your orders…</strong></div> : profile?.role === 'customer'
+            {profileLoading ? <div className="empty-results"><strong>Loading your orders…</strong></div> : (profile?.role === 'customer' || profile?.role === 'shopkeeper')
               ? <CustomerOrderHistory orders={visibleOrders} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onReorderOrder={reorderCollectedOrder} />
-              : <section className="access-gate"><h2>Customer sign-in required</h2><p>Sign in with your customer account to see orders from that account.</p><button className="btn primary" type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in as Customer</button></section>}
+              : <section className="access-gate"><h2>Sign in to view order history</h2><p>Sign in to see orders placed from this account.</p><button className="btn primary" type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in as Customer</button></section>}
           </section>
         ) : (
           <section className="view customer-page" aria-label="Customer ordering">
@@ -1175,7 +1199,7 @@ function App() {
                 <summary><span>Your regular shopping lists</span><small>Save a basket for a quick repeat order</small></summary>
                 <div className="saved-list-disclosure-body"><SavedShoppingLists key={savedShoppingListsKey} storageKey={savedShoppingListsKey} items={cartItems} products={products} onLoadItems={addSavedItemsToCart} /></div>
               </details>
-              {supabaseConfigured && authUser && profile?.role === 'customer' && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
+              {supabaseConfigured && authUser && <OrderNotificationControl enabled={notificationsEnabled} permission={notificationPermission} onToggle={toggleOrderNotifications} />}
             </div>
           </section>
         )}
