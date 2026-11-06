@@ -2210,3 +2210,56 @@ button:active:not(:disabled) { transform: translateY(1px); }
   -webkit-text-fill-color: var(--ink) !important;
   box-shadow: 0 0 0 1000px var(--surface) inset !important;
 }
+
+
+/* Dark theme contrast fixes for ordering and checkout surfaces */
+:root[data-theme="dark"] .shopping-info-bar {
+  border-color: #3a4d40;
+  color: #e8f0e9;
+  background: #1b2920;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+}
+:root[data-theme="dark"] .shopping-info-bar strong { color: #e8f0e9; }
+:root[data-theme="dark"] .shopping-info-bar small { color: #b5c4b9; }
+:root[data-theme="dark"] .shopping-info-icon {
+  border-color: #3c5b46;
+  color: #9be4b5;
+  background: #263c2d;
+}
+:root[data-theme="dark"] .mode { color: #e8f0e9; background: #1a261e; }
+:root[data-theme="dark"] .mode[aria-pressed="true"] {
+  border-color: #71d69a;
+  color: #f1f7f2;
+  background: #254632;
+  box-shadow: 0 0 0 1px rgba(113, 214, 154, .18);
+}
+:root[data-theme="dark"] .mode[aria-pressed="true"] strong { color: #f1f7f2; }
+:root[data-theme="dark"] .mode[aria-pressed="true"] span { color: #c1d8c9; }
+:root[data-theme="dark"] .mode[aria-pressed="true"]::after { color: #102319; background: #71d69a; }
+:root[data-theme="dark"] .chip[aria-pressed="true"] {
+  border-color: #2b7650;
+  color: #ffffff;
+  background: #286d49;
+}
+:root[data-theme="dark"] .quantity-picker select,
+:root[data-theme="dark"] .mini-quantity-select {
+  border-color: #465b4d;
+  color: #e8f0e9;
+  background-color: #1a261e;
+  color-scheme: dark;
+}
+:root[data-theme="dark"] .quantity-picker select option,
+:root[data-theme="dark"] .mini-quantity-select option { color: #e8f0e9; background: #1a261e; }
+:root[data-theme="dark"] .bill-summary .bill-total {
+  border-color: #43584a;
+  color: #f0f5f1;
+  background: #26372b;
+}
+:root[data-theme="dark"] .bill-summary .bill-total > span,
+:root[data-theme="dark"] .bill-summary .bill-total strong { color: #f0f5f1; }
+:root[data-theme="dark"] .store-status-banner:not(.is-closed) { border-color: #3e5e48; background: #1b3022; }
+:root[data-theme="dark"] .store-status-banner.is-closed { border-color: #66562d; background: #332b1b; }
+:root[data-theme="dark"] .store-status-banner .store-status-indicator { color: #102319; }
+:root[data-theme="dark"] .store-status-banner.is-closed .store-status-indicator { color: #fff5df; }
+:root[data-theme="dark"] .public-offers li { border-color: #465447; }
+:root[data-theme="dark"] .store-closed-checkout { color: #f2d88c; background: #342c19; }
