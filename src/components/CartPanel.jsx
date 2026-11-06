@@ -6,6 +6,17 @@ export default function CartPanel({
   items,
   customItems,
   total,
+  discountAmount = 0,
+  discountedTotal = total,
+  coupon = null,
+  couponCode = '',
+  couponError = '',
+  couponBusy = false,
+  onCouponCodeChange,
+  onApplyCoupon,
+  onRemoveCoupon,
+  storeStatus = null,
+  storeAcceptingOrders = true,
   onChange,
   onClear,
   onRemoveCustomItem,
@@ -48,6 +59,7 @@ export default function CartPanel({
             <strong>{successOrder?.status === 'rejected' ? 'Order declined' : 'Order received'}</strong>
             <span>Order {successOrderId}</span>
             {successOrder?.status !== 'rejected' && <span className="order-ready-message">Expected ready by {formatReadyTime(successOrder?.estimatedReadyAt)} · queue slot every 15 minutes.</span>}
+            {successOrder?.status === 'ready' && /^\d{4}$/.test(String(successOrder.pickupPin || '')) && <div className="customer-pickup-pin"><span>Your 4-digit pickup PIN</span><strong>{successOrder.pickupPin}</strong><small>Show this code to the shopkeeper when collecting.</small></div>}
             <small>{liveMode ? 'Status changes also appear in your account messages.' : 'Order updates are shown here in this browser.'}</small>
           </div>
         </div>
@@ -92,13 +104,21 @@ export default function CartPanel({
               <p className="requested-items-note">The shopkeeper will confirm the rate. This amount is excluded from the subtotal above and is payable at the shop desk.</p>
             </div>
           )}
+          {liveMode && <form className="offer-code-form" onSubmit={(event) => { event.preventDefault(); void onApplyCoupon?.() }}>
+            <label htmlFor="checkout-offer-code">Offer code</label>
+            <div><input id="checkout-offer-code" value={couponCode} onChange={(event) => onCouponCodeChange?.(event.target.value.toUpperCase())} maxLength={24} autoComplete="off" placeholder="e.g. SAVE10" /><button className="btn" type="submit" disabled={couponBusy || !couponCode.trim()}>{couponBusy ? 'Checking…' : coupon ? 'Reapply' : 'Apply'}</button></div>
+            {couponError && <p className="offer-code-error" role="alert">{couponError}</p>}
+            {coupon && <p className="offer-code-applied" role="status">{coupon.code} · {coupon.discountPercent}% off <button type="button" onClick={onRemoveCoupon}>Remove</button></p>}
+          </form>}
           <div className="bill-summary">
             <div><span>Confirmed items subtotal</span><strong>{formatMoney(total)}</strong></div>
+            {discountAmount > 0 && <div className="bill-discount"><span>Offer discount {coupon?.code ? '(' + coupon.code + ')' : ''}</span><strong>−{formatMoney(discountAmount)}</strong></div>}
             <div><span>Pickup</span><strong className="free-label">Free</strong></div>
-            <div className="bill-total"><span>{customItems.length ? 'Confirmed amount' : 'Estimated total'}</span><strong>{formatMoney(total)}</strong></div>
+            <div className="bill-total"><span>{customItems.length ? 'Confirmed amount' : 'Estimated total'}</span><strong>{formatMoney(discountedTotal)}</strong></div>
             <p>{customItems.length ? 'Unlisted item prices are not included; settle the confirmed rate at the shop desk.' : 'Final weight of loose items may vary slightly at the store.'}</p>
           </div>
-          {total <= minimumOrderValue && <p className="minimum-order-warning" role="status">Add priced items to exceed ₹{minimumOrderValue}. Unpriced requests do not count toward the minimum.</p>}
+          {coupon && total < coupon.minimumOrder && <p className="minimum-order-warning" role="status">Add items to reach this offer’s ₹{formatMoney(coupon.minimumOrder)} minimum basket.</p>}
+          {discountedTotal <= minimumOrderValue && <p className="minimum-order-warning" role="status">Add priced items to keep the order above ₹{minimumOrderValue}. Unpriced requests do not count.</p>}
           <form className="checkout-form" onSubmit={onSubmit}>
             <label className="field-label" htmlFor="customer-name">Name for pickup</label>
             <input id="customer-name" autoComplete="name" value={customerName} onChange={(event) => onNameChange(event.target.value)} placeholder="e.g. Ananya Reddy" required />
@@ -134,8 +154,9 @@ export default function CartPanel({
                 <span className="demo-chip">DEMO</span>
               </label>}
             </fieldset>
-            <button className="place-order-button" type="submit" disabled={total <= minimumOrderValue}>
-              {total <= minimumOrderValue ? <>Minimum is above ₹{minimumOrderValue}</> : customItems.length ? <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(total)} confirmed + price pending</span></> : <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(total)}</span></>}
+            {!storeAcceptingOrders && <p className="store-closed-checkout" role="status">{storeStatus?.message || 'The shop is not accepting orders right now.'}</p>}
+            <button className="place-order-button" type="submit" disabled={discountedTotal <= minimumOrderValue || !storeAcceptingOrders || (coupon && total < coupon.minimumOrder)}>
+              {!storeAcceptingOrders ? 'Ordering is paused' : discountedTotal <= minimumOrderValue ? <>Minimum is above ₹{minimumOrderValue}</> : customItems.length ? <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)} confirmed + price pending</span></> : <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)}</span></>}
             </button>
             <p className="payment-footnote">{customItems.length ? 'Any requested-item amount is settled at the shop desk after its rate is confirmed.' : 'Demo payment only — no real payment is processed.'}</p>
           </form>
