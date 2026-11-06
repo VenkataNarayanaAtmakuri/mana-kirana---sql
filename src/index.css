@@ -2090,3 +2090,123 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .offer-manager-actions .btn { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 .offer-delete-button { border-color: #e8c1bb; color: #a23a2e; background: #fff5f3; }
 .offer-delete-button:hover { border-color: #d28b81; background: #ffebe8; }
+
+
+/* User selectable dark theme */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101813;
+  --surface: #1a261e;
+  --surface-2: #24342a;
+  --ink: #e8f0e9;
+  --muted: #a9b9ae;
+  --line: #394d40;
+  --primary: #69ce91;
+  --on-primary: #102319;
+  --turmeric: #e8b64c;
+  --on-turmeric: #2c2108;
+  --new: #f3c46a;
+  --new-bg: #3b2d12;
+  --prep: #a3cdf4;
+  --prep-bg: #1a2e41;
+  --ready: #82d9a3;
+  --ready-bg: #183a27;
+  --warn: #ff9c83;
+  --warn-bg: #43231d;
+  --done: #a9b9ae;
+  --done-bg: #29382e;
+  --request-bg: #342c19;
+  --request-border: #6b592d;
+  --request-ink: #f2d88c;
+  --request-row: #40371f;
+  --request-icon: #493d20;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .32);
+}
+
+:root[data-theme="dark"] body {
+  background: radial-gradient(ellipse at 10% 0%, rgba(45, 91, 60, .24), transparent 32rem), var(--bg);
+}
+:root[data-theme="dark"] .top { border-bottom-color: var(--line); background: rgba(16, 24, 19, .94); }
+:root[data-theme="dark"] .tabs { background: var(--surface-2); }
+:root[data-theme="dark"] .tab[aria-pressed="true"] { color: var(--primary); background: var(--surface); }
+:root[data-theme="dark"] .account-button,
+:root[data-theme="dark"] .note,
+:root[data-theme="dark"] .order-rules-notice,
+:root[data-theme="dark"] .custom-request-notice,
+:root[data-theme="dark"] .chip,
+:root[data-theme="dark"] .item,
+:root[data-theme="dark"] .saved-list-disclosure,
+:root[data-theme="dark"] .customer-secondary-tools .order-notifications,
+:root[data-theme="dark"] .public-offers li { background: var(--surface); }
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+:root[data-theme="dark"] .account-button.shopkeeper-signin-button,
+:root[data-theme="dark"] .store-hero-cta,
+:root[data-theme="dark"] .mode[aria-pressed="true"]::after,
+:root[data-theme="dark"] .account-prompt button:hover,
+:root[data-theme="dark"] .chip[aria-pressed="true"],
+:root[data-theme="dark"] .add-to-basket-button,
+:root[data-theme="dark"] .account-switch-button:hover:not(:disabled) { color: var(--on-primary); }
+:root[data-theme="dark"] .live-note { border-color: var(--line); background: var(--surface-2); }
+:root[data-theme="dark"] .store-hero {
+  border-color: var(--line);
+  background: linear-gradient(112deg, #1a3022 0%, #1a261e 58%, #302818 100%);
+}
+:root[data-theme="dark"] .store-hero h1 { color: var(--ink); }
+:root[data-theme="dark"] .store-hero p,
+:root[data-theme="dark"] .product-note { color: var(--muted); }
+:root[data-theme="dark"] .store-hero-tag { color: var(--request-ink); background: var(--request-bg); }
+:root[data-theme="dark"] .store-hero-orbit { background: radial-gradient(circle at 35% 30%, #344b39 0 5%, #253c2d 6% 70%, rgba(30, 57, 38, .1) 71%); }
+:root[data-theme="dark"] .store-hero-cta { color: var(--on-primary); }
+:root[data-theme="dark"] .search-control input,
+:root[data-theme="dark"] .unlisted-form { background: var(--surface); }
+:root[data-theme="dark"] .item.is-selected { background: linear-gradient(145deg, #223329 30%, #1a261e 100%); }
+:root[data-theme="dark"] .low-stock-panel {
+  border-color: #66572d;
+  color: #f0e7ca;
+  background: #292518;
+}
+:root[data-theme="dark"] .low-stock-panel h3,
+:root[data-theme="dark"] .low-stock-panel li strong { color: #f0e7ca; }
+:root[data-theme="dark"] .low-stock-heading p,
+:root[data-theme="dark"] .low-stock-heading label,
+:root[data-theme="dark"] .low-stock-panel .low-stock-clear,
+:root[data-theme="dark"] .low-stock-panel li small { color: #c9bea0; }
+:root[data-theme="dark"] .low-stock-panel li { border-color: #54482a; }
+:root[data-theme="dark"] .low-stock-panel li > b,
+:root[data-theme="dark"] .store-closed-checkout { color: var(--request-ink); }
+:root[data-theme="dark"] .store-status-banner.is-closed,
+:root[data-theme="dark"] .store-closed-checkout { border-color: var(--request-border); background: var(--request-bg); }
+:root[data-theme="dark"] .store-status-indicator { color: var(--on-primary); }
+:root[data-theme="dark"] .public-offers { border-color: var(--request-border); background: linear-gradient(110deg, #302816, #22271e); }
+:root[data-theme="dark"] .public-offers li strong,
+:root[data-theme="dark"] .selected-total,
+:root[data-theme="dark"] .store-status-pill { color: var(--primary); }
+:root[data-theme="dark"] .expiry-alert-heading h3 span,
+:root[data-theme="dark"] .offer-count { color: var(--new); background: var(--new-bg); }
+:root[data-theme="dark"] .expiry-alert-panel li b,
+:root[data-theme="dark"] .restock-panel li b { color: var(--new); }
+:root[data-theme="dark"] .store-status-pill.is-closed { color: var(--request-ink); background: var(--request-bg); }
+:root[data-theme="dark"] .offer-delete-button { border-color: #75443d; color: #ffb5a3; background: #402522; }
+:root[data-theme="dark"] .offer-delete-button:hover { border-color: #9c5a4f; background: #512e29; }
+:root[data-theme="dark"] input::placeholder { color: #a9b9ae; }
+:root[data-theme="dark"] .auth-form input,
+:root[data-theme="dark"] .auth-form input:focus,
+:root[data-theme="dark"] .auth-form input:active,
+:root[data-theme="dark"] .saved-shopping-lists input,
+:root[data-theme="dark"] .saved-shopping-lists select,
+:root[data-theme="dark"] .low-stock-heading input,
+:root[data-theme="dark"] .daily-sales-section input {
+  color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
+  background-color: var(--surface) !important;
+  caret-color: var(--ink);
+}
+:root[data-theme="dark"] .auth-form input::placeholder,
+:root[data-theme="dark"] .saved-shopping-lists input::placeholder { color: var(--muted) !important; -webkit-text-fill-color: var(--muted) !important; }
+:root[data-theme="dark"] .auth-form input:-webkit-autofill,
+:root[data-theme="dark"] .auth-form input:-webkit-autofill:hover,
+:root[data-theme="dark"] .auth-form input:-webkit-autofill:focus,
+:root[data-theme="dark"] .auth-form input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--ink) !important;
+  box-shadow: 0 0 0 1000px var(--surface) inset !important;
+}
