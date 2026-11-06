@@ -283,22 +283,17 @@ function App() {
     setNotice('Profile information updated.')
   }
 
-  async function handleConfirmedSignOut(selectedRole) {
+  async function handleConfirmedSignOut() {
     if (!authUser || signOutBusy) return
 
     setSignOutBusy(true)
     setSignOutError('')
 
     try {
-      // Re-fetch the signed-in user's profile from the backend before signing out.
-      // The selected option is only a confirmation label; it never changes permissions.
+      // Verify the active account before ending this session.
       const verifiedProfile = await fetchProfile(authUser.id)
-      if (!verifiedProfile || verifiedProfile.role !== selectedRole) {
-        setSignOutError(
-          verifiedProfile?.role
-            ? `This session belongs to the ${verifiedProfile.role} account. Choose that option to continue.`
-            : 'Could not verify this account. Please try again.'
-        )
+      if (!verifiedProfile || !['customer', 'shopkeeper'].includes(verifiedProfile.role)) {
+        setSignOutError('Could not verify this account. Please try again.')
         return
       }
 
@@ -1062,28 +1057,18 @@ function App() {
             </button>
             <p className="eyebrow">MANA KIRANA ACCOUNT</p>
             <h2 id="signout-title">Sign out of Mana Kirana?</h2>
-            <p className="muted">
-              Choose the account type for this session. We will verify your actual role before signing you out.
-            </p>
+            <p className="muted">This will end your current session on this device. You can sign in again anytime.</p>
             <div className="auth-form">
               <button
                 className="btn primary"
                 type="button"
                 disabled={signOutBusy || !authUser}
-                onClick={() => { void handleConfirmedSignOut('shopkeeper') }}
+                onClick={() => { void handleConfirmedSignOut() }}
               >
-                {signOutBusy ? 'Verifying…' : 'Sign out as Shopkeeper'}
+                {signOutBusy ? 'Signing out…' : 'Sign out'}
               </button>
               <button
                 className="btn"
-                type="button"
-                disabled={signOutBusy || !authUser}
-                onClick={() => { void handleConfirmedSignOut('customer') }}
-              >
-                {signOutBusy ? 'Verifying…' : 'Sign out as Customer'}
-              </button>
-              <button
-                className="auth-resend"
                 type="button"
                 disabled={signOutBusy}
                 onClick={() => {
