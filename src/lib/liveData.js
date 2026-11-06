@@ -14,8 +14,9 @@ export async function fetchLiveCatalog() {
     storeStatus: data.storeStatus || null,
   }
 }
-export async function fetchLiveOrders() {
-  const rows = await request('/api/orders')
+export async function fetchLiveOrders(scope = 'customer') {
+  if (!['customer', 'shopkeeper'].includes(scope)) throw new Error('Choose a valid order history.')
+  const rows = await request('/api/orders?scope=' + encodeURIComponent(scope))
   return rows.map((row) => ({
     id: orderLabel(row.order_number), dbId: row.id, name: row.customer_name,
     phone: row.customer_phone || '', pickupPhone: row.pickup_phone || '', channel: row.channel, status: row.status,
@@ -61,7 +62,10 @@ export async function updateLiveOrderStatus(orderId, nextStatus, pickupPin) {
   if (nextStatus === 'collected') return request('/api/orders/' + encodeURIComponent(orderId) + '/collect', { method: 'POST', body: JSON.stringify({ pickupPin }) })
   return request('/api/orders/' + encodeURIComponent(orderId) + '/status', { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) })
 }
-export async function hideLiveOrder(orderId) { return request('/api/orders/' + encodeURIComponent(orderId), { method: 'DELETE' }) }
+export async function hideLiveOrder(orderId, scope = 'customer') {
+  if (!['customer', 'shopkeeper'].includes(scope)) throw new Error('Choose a valid order history.')
+  return request('/api/orders/' + encodeURIComponent(orderId) + '?scope=' + encodeURIComponent(scope), { method: 'DELETE' })
+}
 export async function setLiveRequestRate(orderItemId, rate) { return request('/api/order-items/' + orderItemId + '/price', { method: 'PATCH', body: JSON.stringify({ rate }) }) }
 export async function changeLivePassword(currentPassword, newPassword) { return request('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }) }
 function poll(onChange, onStatus, account = false) {
