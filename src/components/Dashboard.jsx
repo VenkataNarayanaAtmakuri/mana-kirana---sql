@@ -1,5 +1,5 @@
-import { ArrowDownToLine, Check, CheckCircle2, Clock3, ClipboardList, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownToLine, Check, CheckCircle2, Clock3, ClipboardList, Mic, MicOff, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import OrderNotificationControl from './OrderNotificationControl.jsx'
 import { formatMoney, formatQuantity, formatReadyTime, orderChannelLabel } from '../data.js'
 
@@ -30,6 +30,76 @@ function readyDeleteAvailability(order) {
   const hours = Math.floor(remainingMinutes / 60)
   const minutes = remainingMinutes % 60
   return { enabled: false, label: 'Delete available in ' + hours + 'h ' + String(minutes).padStart(2, '0') + 'm' }
+}
+
+function VoiceDictationButton({ language, onTranscript, label = 'Speak', successMessage = 'Voice input filled.' }) {
+  const [listening, setListening] = useState(false)
+  const [message, setMessage] = useState('')
+  const recognitionRef = useRef(null)
+
+  useEffect(() => () => {
+    const recognition = recognitionRef.current
+    if (!recognition) return
+    recognition.onend = null
+    recognition.onerror = null
+    recognition.onresult = null
+    recognition.abort()
+  }, [])
+
+  function toggleListening() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      return
+    }
+    const Recognition = typeof window === 'undefined' ? null : window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!Recognition) {
+      setMessage('Voice input is not supported in this browser. You can type instead.')
+      return
+    }
+    const recognition = new Recognition()
+    recognition.lang = language || 'en-IN'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim()
+      if (!transcript) {
+        setMessage('No words were recognized. Try again or type the item.')
+        return
+      }
+      onTranscript(transcript)
+      setMessage(successMessage)
+    }
+    recognition.onerror = (event) => {
+      setMessage(event.error === 'not-allowed'
+        ? 'Allow microphone access in your browser to use voice input.'
+        : event.error === 'no-speech'
+          ? 'No speech was detected. Try again.'
+          : 'Voice input could not start. Try again or type the item.')
+    }
+    recognition.onend = () => {
+      recognitionRef.current = null
+      setListening(false)
+    }
+    recognitionRef.current = recognition
+    setListening(true)
+    setMessage('Listening…')
+    try {
+      recognition.start()
+    } catch {
+      recognitionRef.current = null
+      setListening(false)
+      setMessage('Voice input could not start. Try again or type the item.')
+    }
+  }
+
+  return (
+    <div className="inventory-voice-control">
+      <button className="inventory-voice-button" type="button" onClick={toggleListening} aria-pressed={listening} aria-label={listening ? 'Stop voice input' : label} title={listening ? 'Stop listening' : label}>
+        {listening ? <MicOff size={15} /> : <Mic size={15} />}{listening ? 'Stop' : label}
+      </button>
+      {message && <small className="inventory-voice-message" role="status">{message}</small>}
+    </div>
+  )
 }
 
 function RequestedItemRate({ order, item, onSetRate }) {
@@ -181,7 +251,7 @@ function InventoryRow({ product, onSave, onRemove }) {
   )
 }
 
-function AddProductForm({ categories, onAddProduct }) {
+function AddProductForm({ categories, onAddProduct, voiceLanguage }) {
   const [name, setName] = useState('')
   const [local, setLocal] = useState('')
   const [category, setCategory] = useState(categories[0] || '')
@@ -215,10 +285,10 @@ function AddProductForm({ categories, onAddProduct }) {
 
   return (
     <form className="add-product-form" onSubmit={submit}>
-      <div className="add-product-heading"><div><h3>Add a catalogue item</h3><p>It will appear in the customer shop as soon as you save it.</p></div><span className="add-product-icon"><Plus size={18} /></span></div>
+      <div className="add-product-heading"><div><h3>Add a catalogue item</h3><p>Type or speak the English and Telugu names, then enter the rate and stock.</p></div><span className="add-product-icon"><Plus size={18} /></span></div>
       <div className="add-product-fields">
-        <label><span>Item name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Moong dal" required /></label>
-        <label><span>Telugu name <small>optional</small></span><input value={local} onChange={(event) => setLocal(event.target.value)} placeholder="స్థానిక పేరు" /></label>
+        <label className="catalogue-voice-field"><span>Item name</span><div className="inventory-voice-entry"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Moong dal" required /><VoiceDictationButton language={voiceLanguage} onTranscript={setName} label="Speak" /></div></label>
+        <label className="catalogue-voice-field"><span>Telugu name <small>optional</small></span><div className="inventory-voice-entry"><input value={local} onChange={(event) => setLocal(event.target.value)} placeholder="స్థానిక పేరు" /><VoiceDictationButton language={voiceLanguage} onTranscript={setLocal} label="Speak" /></div></label>
         <label><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)} required><option value="" disabled>Choose a category</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label><span>Sold as</span><select value={unit} onChange={(event) => setUnit(event.target.value)}><option value="kg">Loose · kg</option><option value="pack">Pack</option><option value="dozen">Dozen</option><option value="500 g">500 g pack</option><option value="500 ml">500 ml pack</option><option value="200 g">200 g pack</option><option value="100 g">100 g pack</option></select></label>
         <label><span>Rate · ₹ / {unit}</span><input type="number" min="1" step="1" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="0" required /></label>
@@ -492,6 +562,8 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
 export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onExportReport }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
+  const [inventorySearch, setInventorySearch] = useState('')
+  const [voiceLanguage, setVoiceLanguage] = useState('te-IN')
   const visibleOrders = useMemo(() => {
     const sorted = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     if (filter === 'all') return sorted
@@ -500,6 +572,12 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
     if (filter === 'ready') return sorted.filter((order) => order.status === 'ready')
     return sorted
   }, [orders, filter])
+
+  const visibleProducts = useMemo(() => {
+    const query = inventorySearch.trim().toLocaleLowerCase()
+    if (!query) return products
+    return products.filter((product) => (product.name + ' ' + product.local + ' ' + product.category).toLocaleLowerCase().includes(query))
+  }, [products, inventorySearch])
 
   const pending = orders.filter((order) => order.status === 'pending').length
   const preparing = orders.filter((order) => order.status === 'preparing').length
@@ -554,10 +632,15 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
         <ExpiryAlerts products={products} />
         <RestockSuggestions liveMode={liveMode} onLoadRestock={onLoadRestock} />
         <CategoryManager categories={categories} onAddCategory={onAddCategory} onRemoveCategory={onRemoveCategory} />
-        <AddProductForm categories={categories} onAddProduct={onAddProduct} />
+        <div className="inventory-catalogue-search" role="search" aria-label="Search shopkeeper catalogue">
+          <label htmlFor="inventory-catalogue-search"><span>Find an item by name or Telugu name</span><input id="inventory-catalogue-search" type="search" value={inventorySearch} onChange={(event) => setInventorySearch(event.target.value)} placeholder="Try rice or a Telugu name" /></label>
+          <label><span>Voice language</span><select value={voiceLanguage} onChange={(event) => setVoiceLanguage(event.target.value)} aria-label="Voice search language"><option value="te-IN">తెలుగు</option><option value="en-IN">English</option></select></label>
+          <VoiceDictationButton language={voiceLanguage} onTranscript={setInventorySearch} label="Voice search" successMessage="Catalogue search updated." />
+        </div>
+        <AddProductForm categories={categories} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
-          <div className="inventory-list-heading"><strong>Catalogue</strong><span>{products.length} items · quantity is measured in each item’s selling unit</span></div>
-          {products.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} />)}
+          <div className="inventory-list-heading"><strong>Catalogue</strong><span>{inventorySearch.trim() ? visibleProducts.length + ' of ' + products.length + ' items' : products.length + ' items'} · quantity is measured in each item’s selling unit</span></div>
+          {visibleProducts.length ? visibleProducts.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} />) : <p className="inventory-no-results">{products.length ? 'No catalogue items match that search.' : 'No catalogue items yet. Add an item above.'}</p>}
         </div>
       </section> : <section className="store-tools-section">
         <StoreHoursPanel storeStatus={storeStatus} onSave={onSaveStoreSettings} />
