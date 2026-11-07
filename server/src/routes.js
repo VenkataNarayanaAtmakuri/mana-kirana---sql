@@ -347,7 +347,24 @@ router.get('/orders', requireAuth, async (req, res) => {
   params.push(hiddenMarker)
   conditions.push('NOT EXISTS (SELECT 1 FROM customer_messages hidden WHERE hidden.order_id=o.id AND hidden.customer_id=o.customer_id AND hidden.body=$' + params.length + ')')
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
-  const { rows } = await pool.query(`SELECT o.*, COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where} GROUP BY o.id ORDER BY o.created_at DESC`, params)
+  const { rows } = await pool.query(`SELECT o.*,
+    COALESCE(
+      (SELECT MAX(ready_message.created_at)
+       FROM customer_messages ready_message
+       WHERE ready_message.order_id=o.id
+         AND ready_message.customer_id=o.customer_id
+         AND ready_message.body LIKE 'Your order is ready for pickup. Your 4-digit pickup PIN is %'),
+      CASE WHEN o.status='ready' THEN o.updated_at ELSE NULL END
+    ) AS ready_at,
+    EXISTS (
+      SELECT 1 FROM customer_messages shopkeeper_hidden
+      WHERE shopkeeper_hidden.order_id=o.id
+        AND shopkeeper_hidden.customer_id=o.customer_id
+        AND left(shopkeeper_hidden.body,length('__order_hidden__:shopkeeper:'))='__order_hidden__:shopkeeper:'
+    ) AS shopkeeper_removed,
+    COALESCE(json_agg(json_build_object('id',i.id,'product_id',i.product_id,'item_name',i.item_name,'emoji',i.emoji,'quantity',i.quantity,'unit',i.unit,'price',i.price,'line_total',i.line_total,'custom_request',i.custom_request,'price_confirmed',i.price_confirmed)) FILTER (WHERE i.id IS NOT NULL),'[]') AS items
+    FROM orders o LEFT JOIN order_items i ON i.order_id=o.id ${where}
+    GROUP BY o.id ORDER BY o.created_at DESC`, params)
   res.json(rows.map((row) => scope === 'shopkeeper' ? { ...row, pickup_pin: null } : row))
 })
 router.delete('/orders/:id', requireAuth, async (req, res) => {
@@ -360,7 +377,7 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const { rows } = await client.query('SELECT id,customer_id,status FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
+    const { rows } = await client.query('SELECT id,customer_id,status,updated_at FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
     const order = rows[0]
     if (!order) {
       await client.query('ROLLBACK')
@@ -370,18 +387,46 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
       await client.query('ROLLBACK')
       return res.status(404).json({ error: 'Order not found.' })
     }
-    if (order.status !== 'collected') {
-      await client.query('ROLLBACK')
-      return res.status(409).json({ error: 'Only collected orders can be deleted.' })
+
+    let canHideFromHistory = order.status === 'collected'
+    if (scope === 'shopkeeper' && order.status === 'ready') {
+      const readyMessages = await client.query(
+        `SELECT MAX(created_at) AS ready_at
+         FROM customer_messages
+         WHERE order_id=$1 AND customer_id=$2
+           AND body LIKE 'Your order is ready for pickup. Your 4-digit pickup PIN is %'`,
+        [order.id, order.customer_id],
+      )
+      const readyAt = readyMessages.rows[0]?.ready_at || order.updated_at
+      const readyAtMs = readyAt ? new Date(readyAt).getTime() : Number.NaN
+      canHideFromHistory = Number.isFinite(readyAtMs) && Date.now() - readyAtMs >= 24 * 60 * 60 * 1000
+    } else if (scope === 'customer' && order.status === 'ready') {
+      const shopkeeperMarker = await client.query(
+        `SELECT 1 FROM customer_messages
+         WHERE order_id=$1 AND customer_id=$2
+           AND left(body,length('__order_hidden__:shopkeeper:'))='__order_hidden__:shopkeeper:'
+         LIMIT 1`,
+        [order.id, order.customer_id],
+      )
+      canHideFromHistory = Boolean(shopkeeperMarker.rows[0])
     }
-    // Hiding a history row leaves the order and its item details in the other account's history.
+
+    if (!canHideFromHistory) {
+      await client.query('ROLLBACK')
+      const error = scope === 'shopkeeper'
+        ? 'A ready order can be removed from the admin list after 24 hours.'
+        : 'You can remove a ready order after the shopkeeper removes it from their active list.'
+      return res.status(409).json({ error })
+    }
+
+    // Hiding one side's history keeps the order and its item details available to the other side.
     const hiddenMarker = '__order_hidden__:' + scope + ':' + req.session.user.id
     await client.query(
       'INSERT INTO customer_messages (customer_id,order_id,body) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM customer_messages WHERE customer_id=$1 AND order_id=$2 AND body=$3)',
       [order.customer_id, order.id, hiddenMarker],
     )
     await client.query('COMMIT')
-    res.json({ id: order.id, hidden: true, scope })
+    res.json({ id: order.id, hidden: true, scope, customerCanHide: scope === 'shopkeeper' && order.status === 'ready' })
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
