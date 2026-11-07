@@ -192,6 +192,10 @@ function App() {
   const [channel, setChannel] = useState(getInitialChannel)
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
+  const [voiceSearchLanguage, setVoiceSearchLanguage] = useState('te-IN')
+  const [voiceSearchActive, setVoiceSearchActive] = useState(false)
+  const [voiceSearchMessage, setVoiceSearchMessage] = useState('')
+  const voiceRecognitionRef = useRef(null)
   const [cart, setCart] = useState({})
   const [customItems, setCustomItems] = useState([])
   const [orders, setOrders] = useState(() => supabaseConfigured ? [] : readOrders())
@@ -566,6 +570,7 @@ function App() {
   }
 
   const catalogCategories = useMemo(() => [...new Set(products.map((product) => product.category))], [products])
+  const voiceSearchSupported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
   const categories = useMemo(() => supabaseConfigured
     ? remoteCategories.map((item) => item.name)
     : [...new Set([...catalogCategories, ...customCategories])], [catalogCategories, customCategories, remoteCategories])
@@ -872,6 +877,52 @@ function App() {
     window.history.replaceState(null, '', url.pathname + url.search + url.hash)
   }
 
+  function toggleVoiceSearch() {
+    if (voiceRecognitionRef.current) {
+      voiceRecognitionRef.current.stop()
+      return
+    }
+    const Recognition = typeof window === 'undefined' ? null : window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!Recognition) {
+      setVoiceSearchMessage('Voice search is not supported in this browser. You can type your search instead.')
+      return
+    }
+    const recognition = new Recognition()
+    recognition.lang = voiceSearchLanguage
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim()
+      if (transcript) {
+        setSearch(transcript)
+        setVoiceSearchMessage('Searching for “' + transcript + '”.')
+      } else {
+        setVoiceSearchMessage('I could not hear a product name. Try again or type it.')
+      }
+    }
+    recognition.onerror = (event) => {
+      setVoiceSearchMessage(event.error === 'not-allowed'
+        ? 'Allow microphone access in your browser to use voice search.'
+        : event.error === 'no-speech'
+          ? 'No speech was detected. Try again or type your search.'
+          : 'Voice search could not start. Try again or type your search.')
+    }
+    recognition.onend = () => {
+      voiceRecognitionRef.current = null
+      setVoiceSearchActive(false)
+    }
+    voiceRecognitionRef.current = recognition
+    setVoiceSearchActive(true)
+    setVoiceSearchMessage('Listening…')
+    try {
+      recognition.start()
+    } catch {
+      voiceRecognitionRef.current = null
+      setVoiceSearchActive(false)
+      setVoiceSearchMessage('Voice search could not start. Try again or type your search.')
+    }
+  }
+
   async function submitOrder(event) {
     event.preventDefault()
     if (!cartItems.length && !customItems.length) return
@@ -915,7 +966,7 @@ function App() {
         return
       }
       try {
-        const result = await placeLiveOrder({
+        const orderDetails = {
           name: customerName.trim(),
           phone: digits,
           pickupPhone: pickupDigits ? '+91' + pickupDigits : null,
@@ -926,7 +977,31 @@ function App() {
             ...cartItems.map((item) => ({ product_id: item.id, name: item.name, emoji: item.emoji, quantity: item.quantity, unit: item.unit, price: item.price, line_total: Math.round(item.price * item.quantity * 100) / 100, custom: false, price_confirmed: true })),
             ...customItems.map((item) => ({ product_id: null, name: item.name, emoji: '📝', quantity: item.quantity, unit: item.unit, price: null, line_total: null, custom: true, price_confirmed: false })),
           ],
-        })
+        }
+        const acceptedPriceChanges = new Map()
+        let result
+        while (!result) {
+          try {
+            result = await placeLiveOrder({
+              ...orderDetails,
+              acceptedPriceChanges: Array.from(acceptedPriceChanges, ([product_id, price]) => ({ product_id, price })),
+            })
+          } catch (error) {
+            const changes = error.payload?.priceChanges
+            if (error.status !== 409 || !Array.isArray(changes) || !changes.length) throw error
+            const details = changes.map((change) => {
+              const previous = change.old_price == null ? 'price unavailable' : formatMoney(change.old_price)
+              return '• ' + change.name + ': ' + previous + ' → ' + formatMoney(change.new_price) + ' per ' + change.unit
+            }).join('\n')
+            const confirmed = window.confirm('Some catalogue prices changed since you added these items:\n\n' + details + '\n\nPlace the order using these current prices?')
+            if (!confirmed) {
+              await refreshLiveCatalog().catch(() => {})
+              setNotice('Price changes were not accepted. Review the refreshed basket before ordering.')
+              return
+            }
+            for (const change of changes) acceptedPriceChanges.set(String(change.product_id), Number(change.new_price))
+          }
+        }
         const id = 'MK-' + String(result.order_number).padStart(6, '0')
         setSuccessOrderSnapshot({ id, estimatedReadyAt: result.estimated_ready_at, status: 'pending', pickupPin: result.pickup_pin, total: Number(result.total), subtotal: Number(result.subtotal), discountAmount: Number(result.discount_amount || 0) })
         setCart({})
@@ -1229,7 +1304,17 @@ function App() {
                 <div className="catalog-toolbar">
                   <div className="search-control">
                     <label htmlFor="product-search">Search the shop</label>
-                    <input id="product-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try rice, dal, onion or పాలు" />
+                    <div className="search-entry">
+                      <input id="product-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try rice, dal or పాలు" />
+                      <select className="voice-language-select" value={voiceSearchLanguage} onChange={(event) => setVoiceSearchLanguage(event.target.value)} aria-label="Voice search language">
+                        <option value="te-IN">తెలుగు</option>
+                        <option value="en-IN">English</option>
+                      </select>
+                      <button className="voice-search-button" type="button" onClick={toggleVoiceSearch} aria-label={voiceSearchActive ? 'Stop voice search' : 'Start voice search'} aria-pressed={voiceSearchActive} title={voiceSearchSupported ? 'Speak a product name in Telugu or English' : 'Voice search is not supported in this browser'}>
+                        {voiceSearchActive ? 'Stop listening' : '🎙 Speak'}
+                      </button>
+                    </div>
+                    {voiceSearchMessage && <p className="voice-search-message" role="status">{voiceSearchMessage}</p>}
                   </div>
                   <div className="category-list" role="group" aria-label="Product categories">
                     {['All items', ...catalogCategories].map((item) => (

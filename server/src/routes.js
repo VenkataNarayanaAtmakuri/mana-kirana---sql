@@ -367,6 +367,24 @@ router.get('/orders', requireAuth, async (req, res) => {
     GROUP BY o.id ORDER BY o.created_at DESC`, params)
   res.json(rows.map((row) => scope === 'shopkeeper' ? { ...row, pickup_pin: null } : row))
 })
+router.get('/customer/spending-summary', requireAuth, async (req, res) => {
+  const period = String(req.query.period || 'month')
+  if (!['week', 'month'].includes(period)) return res.status(400).json({ error: 'Choose a valid spending period.' })
+  const unit = period === 'week' ? 'week' : 'month'
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS order_count, COALESCE(SUM(total), 0)::numeric AS total,
+       COUNT(*) FILTER (WHERE EXISTS (
+         SELECT 1 FROM order_items item
+         WHERE item.order_id=orders.id AND item.custom_request=true AND item.price_confirmed=false
+       ))::int AS unpriced_order_count
+     FROM orders
+     WHERE customer_id=$1 AND status='collected'
+       AND updated_at >= (date_trunc('${unit}', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
+       AND updated_at < ((date_trunc('${unit}', now() AT TIME ZONE 'Asia/Kolkata') + interval '1 ${unit}') AT TIME ZONE 'Asia/Kolkata')`,
+    [req.session.user.id],
+  )
+  res.json({ period, orderCount: Number(rows[0]?.order_count || 0), total: Number(rows[0]?.total || 0), unpricedOrderCount: Number(rows[0]?.unpriced_order_count || 0) })
+})
 router.delete('/orders/:id', requireAuth, async (req, res) => {
   const role = req.session.user.role
   const requestedScope = String(req.query.scope || '')
@@ -437,6 +455,12 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
 router.post('/orders', requireAuth, async (req, res) => {
   const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, payment, items } = req.body
   const offerCode = String(req.body.offerCode || '').trim().toUpperCase()
+  const acceptedPriceChanges = new Map()
+  for (const change of Array.isArray(req.body.acceptedPriceChanges) ? req.body.acceptedPriceChanges : []) {
+    if (change && change.product_id != null && Number.isFinite(Number(change.price))) {
+      acceptedPriceChanges.set(String(change.product_id), roundMoney(Number(change.price)))
+    }
+  }
   if (offerCode && !/^[A-Z0-9-]{3,24}$/.test(offerCode)) return res.status(400).json({ error: 'Enter a valid offer code.' })
   const phone = phoneE164(rawPhone)
   const pickupText = String(rawPickupPhone || '').trim()
@@ -451,6 +475,7 @@ router.post('/orders', requireAuth, async (req, res) => {
     if (!storeStatus.acceptingOrders) throw new Error(storeStatus.message || 'The shop is closed right now.')
     let subtotal = 0, hasCustom = false
     const normalized = []
+    const priceChanges = []
     for (const item of items) {
       const qty = Number(item.quantity)
       if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) throw new Error('Invalid item quantity.')
@@ -459,9 +484,25 @@ router.post('/orders', requireAuth, async (req, res) => {
       if (!product.rows[0]) throw new Error('A selected product is no longer available.')
       const p = product.rows[0]
       if (Number(p.stock) < qty) throw new Error(`${p.name} does not have enough stock.`)
-      const line = Math.round(Number(p.price) * qty * 100) / 100
+      const currentPrice = roundMoney(Number(p.price))
+      const submittedPrice = Number(item.price)
+      if ((!Number.isFinite(submittedPrice) || roundMoney(submittedPrice) !== currentPrice)
+        && acceptedPriceChanges.get(String(p.id)) !== currentPrice) {
+        priceChanges.push({
+          product_id: p.id,
+          name: p.name,
+          unit: p.unit,
+          old_price: Number.isFinite(submittedPrice) ? roundMoney(submittedPrice) : null,
+          new_price: currentPrice,
+        })
+      }
+      const line = Math.round(currentPrice * qty * 100) / 100
       subtotal += line
-      normalized.push({ product_id: p.id, name: p.name, emoji: p.emoji, quantity: qty, unit: p.unit, price: Number(p.price), line_total: line, custom: false })
+      normalized.push({ product_id: p.id, name: p.name, emoji: p.emoji, quantity: qty, unit: p.unit, price: currentPrice, line_total: line, custom: false })
+    }
+    if (priceChanges.length) {
+      await client.query('ROLLBACK')
+      return res.status(409).json({ error: 'Catalogue prices changed. Review the current prices before placing the order.', priceChanges })
     }
     subtotal = roundMoney(subtotal)
     if (subtotal <= 200) throw new Error('The confirmed item subtotal must be more than ₹200.')

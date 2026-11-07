@@ -14,6 +14,10 @@ export async function fetchLiveCatalog() {
     storeStatus: data.storeStatus || null,
   }
 }
+export async function fetchCustomerSpendingSummary(period = 'month') {
+  if (!['week', 'month'].includes(period)) throw new Error('Choose a valid spending period.')
+  return request('/api/customer/spending-summary?period=' + encodeURIComponent(period))
+}
 export async function fetchLiveOrders(scope = 'customer') {
   if (!['customer', 'shopkeeper'].includes(scope)) throw new Error('Choose a valid order history.')
   const rows = await request('/api/orders?scope=' + encodeURIComponent(scope))
