@@ -134,6 +134,25 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
   )
 }
 
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div className="wrap site-footer-inner">
+        <div className="site-footer-brand">
+          <strong>Mana Kirana</strong>
+          <span>Venkata Kusuma Haranth General Stores</span>
+        </div>
+        <nav aria-label="Information and project links">
+          <a href="/about/">About</a>
+          <a href="/contact/">Contact</a>
+          <a href="https://github.com/VenkataNarayanaAtmakuri/mana-kirana---sql" target="_blank" rel="noreferrer">GitHub source</a>
+        </nav>
+        <small>Pickup orders are collected and paid for at the store.</small>
+      </div>
+    </footer>
+  )
+}
+
 function OrderMode({ channel, onChange }) {
   const modes = [
     { id: 'entrance', title: 'Scanned entrance QR', detail: "I'm at the shop door" },
@@ -1344,6 +1363,8 @@ function App() {
           </section>
         )}
       </main>
+
+      <SiteFooter />
 
       {view === 'shop' && itemCount > 0 && (
         <button className="mobile-cart-bar" type="button" onClick={() => setMobileCartOpen(true)}>
