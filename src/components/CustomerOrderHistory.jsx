@@ -33,8 +33,9 @@ function receiptText(order) {
   ]
   if (order.offerCode) lines.push('Offer: ' + order.offerCode)
   if (order.discountAmount > 0) lines.push('Discount: −' + formatMoney(order.discountAmount))
-  lines.push('Order total: ' + formatMoney(order.total))
-  lines.push('Payment: ' + (order.payment || 'Pay at pickup'))
+  if (order.items.some((item) => item.lineTotal == null)) lines.push('Unpriced item requests are not included in this confirmed total.')
+  lines.push('Confirmed total: ' + formatMoney(order.total))
+  lines.push('Payment option: ' + (order.payment || 'Pay at pickup'))
   return lines.join('\n')
 }
 
@@ -82,7 +83,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
       </div>
       <section className="customer-spend-summary" aria-label="Spending summary">
         <div className="customer-spend-heading">
-          <div><strong>Grocery spending</strong><span>Based on collected orders</span></div>
+          <div><strong>Grocery spending</strong><span>Recorded totals for collected orders</span></div>
           <div className="spend-period-toggle" role="group" aria-label="Spending period">
             <button type="button" aria-pressed={spendPeriod === 'week'} onClick={() => setSpendPeriod('week')}>This week</button>
             <button type="button" aria-pressed={spendPeriod === 'month'} onClick={() => setSpendPeriod('month')}>This month</button>
@@ -90,7 +91,10 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
         </div>
         {spendingLoading ? <p className="customer-spend-note">Loading spending summary…</p> : spendingError
           ? <p className="customer-spend-note" role="status">Could not load spending summary: {spendingError}</p>
-          : <div className="customer-spend-total"><strong>{formatMoney(spending?.total || 0)}</strong><span>{spending?.orderCount || 0} collected {(spending?.orderCount || 0) === 1 ? 'order' : 'orders'} {spendPeriod === 'week' ? 'this week' : 'this month'}</span></div>}
+          : <>
+            <div className="customer-spend-total"><strong>{formatMoney(spending?.total || 0)}</strong><span>{spending?.orderCount || 0} collected {(spending?.orderCount || 0) === 1 ? 'order' : 'orders'} {spendPeriod === 'week' ? 'this week' : 'this month'}</span></div>
+            {spending?.unpricedOrderCount > 0 && <p className="customer-spend-note">{spending.unpricedOrderCount} collected {spending.unpricedOrderCount === 1 ? 'order includes' : 'orders include'} an item whose price is not recorded; that amount is not included.</p>}
+          </>}
       </section>
       {sortedOrders.length ? (
         <ul className="customer-order-list">
@@ -131,7 +135,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                         {order.items.map((item) => (
                           <li key={item.id || item.name}>
                             <div><strong>{item.name}</strong><span>{formatQuantity(item.quantity, item.unit)}{item.price == null ? '' : ' × ' + formatMoney(item.price)}</span></div>
-                            <strong>{item.lineTotal == null ? 'At shop' : formatMoney(item.lineTotal)}</strong>
+                            <strong>{item.lineTotal == null ? 'Price pending at shop' : formatMoney(item.lineTotal)}</strong>
                           </li>
                         ))}
                       </ul>
@@ -140,6 +144,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                         {order.discountAmount > 0 && <div><span>Discount {order.offerCode ? '(' + order.offerCode + ')' : ''}</span><strong>−{formatMoney(order.discountAmount)}</strong></div>}
                         <div><span>Order total</span><strong>{formatMoney(order.total)}</strong></div>
                       </div>
+                      {order.items.some((item) => item.lineTotal == null) && <p className="customer-spend-note">Unpriced requests are not included in this confirmed total.</p>}
                       <button className="digital-receipt-share" type="button" onClick={() => shareReceipt(order)}>Share receipt</button>
                       <p className="digital-receipt-message" role="status">{receiptMessage}</p>
                     </div>
