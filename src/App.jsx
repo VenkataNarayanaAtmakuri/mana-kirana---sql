@@ -978,11 +978,14 @@ function App() {
             ...customItems.map((item) => ({ product_id: null, name: item.name, emoji: '📝', quantity: item.quantity, unit: item.unit, price: null, line_total: null, custom: true, price_confirmed: false })),
           ],
         }
-        let acceptedPriceChanges = []
+        const acceptedPriceChanges = new Map()
         let result
         while (!result) {
           try {
-            result = await placeLiveOrder({ ...orderDetails, acceptedPriceChanges })
+            result = await placeLiveOrder({
+              ...orderDetails,
+              acceptedPriceChanges: Array.from(acceptedPriceChanges, ([product_id, price]) => ({ product_id, price })),
+            })
           } catch (error) {
             const changes = error.payload?.priceChanges
             if (error.status !== 409 || !Array.isArray(changes) || !changes.length) throw error
@@ -996,7 +999,7 @@ function App() {
               setNotice('Price changes were not accepted. Review the refreshed basket before ordering.')
               return
             }
-            acceptedPriceChanges = changes.map((change) => ({ product_id: change.product_id, price: Number(change.new_price) }))
+            for (const change of changes) acceptedPriceChanges.set(String(change.product_id), Number(change.new_price))
           }
         }
         const id = 'MK-' + String(result.order_number).padStart(6, '0')
