@@ -2313,3 +2313,27 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .voice-language-select { flex: 1; }
   .voice-search-button { flex: 1; }
 }
+
+
+/* Shopkeeper stock search and voice-assisted catalogue entry */
+.inventory-catalogue-search { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(120px, 170px) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.inventory-catalogue-search > label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.inventory-catalogue-search input, .inventory-catalogue-search select { min-height: 40px; }
+.inventory-voice-control { min-width: max-content; display: grid; justify-items: start; align-content: start; gap: 3px; }
+.inventory-voice-button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 11px; border: 1px solid var(--primary); border-radius: 8px; color: var(--primary); background: var(--surface); font-size: 12px; font-weight: 750; }
+.inventory-voice-button[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
+.inventory-voice-message { max-width: 230px; color: var(--muted); font-size: 10px; line-height: 1.3; }
+.inventory-voice-entry { display: flex; align-items: start; gap: 5px; }
+.inventory-voice-entry > input { min-width: 0; flex: 1; }
+.inventory-voice-entry .inventory-voice-control { flex: none; }
+.inventory-no-results { padding: 14px; margin: 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) {
+  .inventory-catalogue-search { grid-template-columns: minmax(0, 1fr) minmax(110px, 1fr); align-items: end; }
+  .inventory-catalogue-search > label:first-child { grid-column: 1 / -1; }
+  .inventory-catalogue-search > .inventory-voice-control { grid-column: 1 / -1; }
+  .inventory-voice-entry .inventory-voice-button { padding: 6px 8px; }
+}
+@media (max-width: 390px) {
+  .inventory-catalogue-search { grid-template-columns: 1fr; }
+  .inventory-catalogue-search > .inventory-voice-control { grid-column: auto; }
+}
