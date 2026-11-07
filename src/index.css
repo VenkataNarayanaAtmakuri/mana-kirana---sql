@@ -2263,3 +2263,14 @@ button:active:not(:disabled) { transform: translateY(1px); }
 :root[data-theme="dark"] .store-status-banner.is-closed .store-status-indicator { color: #fff5df; }
 :root[data-theme="dark"] .public-offers li { border-color: #465447; }
 :root[data-theme="dark"] .store-closed-checkout { color: #f2d88c; background: #342c19; }
+
+
+.customer-order-expiry-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--request-border);
+  border-radius: 9px;
+  color: var(--request-ink);
+  background: var(--request-bg);
+  font-size: 12px;
+}

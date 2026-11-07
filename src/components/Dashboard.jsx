@@ -22,6 +22,16 @@ function timeLabel(timestamp) {
   return new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
 }
 
+function readyDeleteAvailability(order) {
+  const readyAt = Date.parse(order.readyAt || '')
+  if (!Number.isFinite(readyAt)) return { enabled: false, label: 'Delete available 24 hours after ready' }
+  const remainingMinutes = Math.ceil((readyAt + 24 * 60 * 60 * 1000 - Date.now()) / 60000)
+  if (remainingMinutes <= 0) return { enabled: true, label: 'Delete from admin list' }
+  const hours = Math.floor(remainingMinutes / 60)
+  const minutes = remainingMinutes % 60
+  return { enabled: false, label: 'Delete available in ' + hours + 'h ' + String(minutes).padStart(2, '0') + 'm' }
+}
+
 function RequestedItemRate({ order, item, onSetRate }) {
   const [rate, setRate] = useState('')
   useEffect(() => setRate(item.price == null ? '' : String(item.price)), [item.price])
@@ -53,6 +63,7 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
         ? { label: 'Mark collected', icon: ArrowDownToLine, next: 'collected' }
         : null
   const unpricedCount = order.items.filter((item) => item.custom && !item.priced).length
+  const readyDelete = order.status === 'ready' && liveMode ? readyDeleteAvailability(order) : null
 
   return (
     <article className={`order-card ${order.status === 'pending' ? 'order-card-new' : ''}`}>
@@ -102,6 +113,18 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
             {order.status === 'collected' && (
               <button className="reject-button" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id}>
                 <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
+              </button>
+            )}
+            {readyDelete && (
+              <button
+                className="reject-button"
+                type="button"
+                onClick={() => onDeleteOrder(order.id)}
+                disabled={!readyDelete.enabled || deletingOrderId === order.id}
+                aria-label={readyDelete.enabled ? 'Remove overdue order ' + order.id + ' from admin history' : readyDelete.label}
+                title={readyDelete.enabled ? 'The customer can remove this order from their history afterward.' : 'Available 24 hours after the order was marked ready.'}
+              >
+                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : readyDelete.label}
               </button>
             )}
           </div>
