@@ -372,14 +372,18 @@ router.get('/customer/spending-summary', requireAuth, async (req, res) => {
   if (!['week', 'month'].includes(period)) return res.status(400).json({ error: 'Choose a valid spending period.' })
   const unit = period === 'week' ? 'week' : 'month'
   const { rows } = await pool.query(
-    `SELECT COUNT(*)::int AS order_count, COALESCE(SUM(total), 0)::numeric AS total
+    `SELECT COUNT(*)::int AS order_count, COALESCE(SUM(total), 0)::numeric AS total,
+       COUNT(*) FILTER (WHERE EXISTS (
+         SELECT 1 FROM order_items item
+         WHERE item.order_id=orders.id AND item.custom_request=true AND item.price_confirmed=false
+       ))::int AS unpriced_order_count
      FROM orders
      WHERE customer_id=$1 AND status='collected'
        AND updated_at >= (date_trunc('${unit}', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
        AND updated_at < ((date_trunc('${unit}', now() AT TIME ZONE 'Asia/Kolkata') + interval '1 ${unit}') AT TIME ZONE 'Asia/Kolkata')`,
     [req.session.user.id],
   )
-  res.json({ period, orderCount: Number(rows[0]?.order_count || 0), total: Number(rows[0]?.total || 0) })
+  res.json({ period, orderCount: Number(rows[0]?.order_count || 0), total: Number(rows[0]?.total || 0), unpricedOrderCount: Number(rows[0]?.unpriced_order_count || 0) })
 })
 router.delete('/orders/:id', requireAuth, async (req, res) => {
   const role = req.session.user.role
