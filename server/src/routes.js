@@ -60,15 +60,17 @@ function normalizeStoreMapUrl(value) {
     return url.toString()
   } catch { return null }
 }
-async function readStoreStatus(queryable = pool) {
+async function readStoreStatus(queryable = pool, { includeContact = true } = {}) {
   const { rows } = await queryable.query('SELECT hours,status_override,closed_message FROM store_settings WHERE id=1')
   const setting = rows[0] || { hours: DEFAULT_STORE_HOURS, status_override: 'auto', closed_message: 'The shop is closed right now.' }
   let contact = DEFAULT_STORE_CONTACT
-  try {
-    const result = await queryable.query('SELECT store_name,contact_phone,contact_address,maps_url FROM store_settings WHERE id=1')
-    contact = { ...DEFAULT_STORE_CONTACT, ...(result.rows[0] || {}) }
-  } catch (error) {
-    if (error.code !== '42703') throw error
+  if (includeContact) {
+    try {
+      const result = await queryable.query('SELECT store_name,contact_phone,contact_address,maps_url FROM store_settings WHERE id=1')
+      contact = { ...DEFAULT_STORE_CONTACT, ...(result.rows[0] || {}) }
+    } catch (error) {
+      if (error.code !== '42703') throw error
+    }
   }
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date())
   const value = (type) => parts.find((part) => part.type === type)?.value || ''
@@ -594,7 +596,8 @@ router.post('/orders', requireAuth, async (req, res) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const storeStatus = await readStoreStatus(client)
+    // Checkout only needs opening hours; contact fields are optional and may not exist on older databases.
+    const storeStatus = await readStoreStatus(client, { includeContact: false })
     if (!storeStatus.acceptingOrders) throw new Error(storeStatus.message || 'The shop is closed right now.')
     let subtotal = 0, hasCustom = false
     const normalized = []
