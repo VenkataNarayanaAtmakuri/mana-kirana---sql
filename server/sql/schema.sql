@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE UNIQUE INDEX IF NOT EXISTS products_name_ci_unique ON products(lower(name)) WHERE active;
 CREATE INDEX IF NOT EXISTS products_active_category_idx ON products(category_id) WHERE active;
 CREATE INDEX IF NOT EXISTS products_expiry_idx ON products(expires_on) WHERE active AND expires_on IS NOT NULL;
+CREATE TABLE IF NOT EXISTS product_images (
+  product_id uuid PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  content_type text NOT NULL CHECK (content_type IN ('image/jpeg','image/png','image/webp')),
+  image_data bytea NOT NULL CHECK (octet_length(image_data) <= 2097152),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS offers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title text NOT NULL,

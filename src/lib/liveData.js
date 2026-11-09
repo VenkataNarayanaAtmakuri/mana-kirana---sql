@@ -9,6 +9,7 @@ export async function fetchLiveCatalog() {
       id: row.id, name: row.name, local: row.local || '', category: row.category || 'Other', categoryId: row.category_id,
       price: Number(row.price), unit: row.unit, step: Number(row.step) || 1, stock: Number(row.stock), emoji: row.emoji || '🛍️', tint: row.tint || 'new', note: row.note || '',
       expiresOn: row.expires_on || '',
+      imageUrl: row.image_updated_at ? API_URL + '/api/products/' + encodeURIComponent(row.id) + '/image?v=' + encodeURIComponent(row.image_updated_at) : '',
     })),
     offers: (data.offers || []).map((row) => ({ ...row, discountPercent: Number(row.discount_percent), minimumOrder: Number(row.minimum_order) })),
     storeStatus: data.storeStatus || null,
@@ -66,6 +67,12 @@ export async function archiveLiveCategory(categoryId) { return request('/api/cat
 export async function createLiveProduct(details, categoryId) { return request('/api/products', { method: 'POST', body: JSON.stringify({ ...details, categoryId }) }) }
 export async function updateLiveProduct(productId, changes) { return request('/api/products/' + productId, { method: 'PATCH', body: JSON.stringify(changes) }) }
 export async function archiveLiveProduct(productId) { return request('/api/products/' + productId, { method: 'DELETE' }) }
+export async function uploadLiveProductImage(productId, file) {
+  return request('/api/products/' + encodeURIComponent(productId) + '/image', { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+}
+export async function deleteLiveProductImage(productId) {
+  return request('/api/products/' + encodeURIComponent(productId) + '/image', { method: 'DELETE' })
+}
 export async function placeLiveOrder(details) { return request('/api/orders', { method: 'POST', body: JSON.stringify(details) }) }
 export async function updateLiveOrderStatus(orderId, nextStatus, pickupPin) {
   if (nextStatus === 'collected') return request('/api/orders/' + encodeURIComponent(orderId) + '/collect', { method: 'POST', body: JSON.stringify({ pickupPin }) })

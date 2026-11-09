@@ -18,6 +18,7 @@ import {
   createLiveProduct,
   createLiveOffer,
   deleteLiveOffer,
+  deleteLiveProductImage,
   downloadLiveReport,
   fetchRestockSuggestions,
   hideLiveOrder,
@@ -34,11 +35,13 @@ import {
   updateLiveOrderStatus,
   updateLiveOffer,
   updateLiveProduct,
+  uploadLiveProductImage,
   updateLiveStoreSettings,
   updateLiveStoreContact,
   validateLiveOffer,
 } from './lib/liveData.js'
 import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
+import { prepareProductImage } from './lib/productImage.js'
 
 function getInitialView() {
   const pathname = typeof window === 'undefined' ? '/' : window.location.pathname.replace(/\/+$/, '') || '/'
@@ -880,6 +883,35 @@ function App() {
     setCustomItems((current) => current.filter((item) => item.id !== id))
   }
 
+  async function uploadProductImage(productId, file) {
+    const product = products.find((item) => item.id === productId)
+    try {
+      const preparedImage = await prepareProductImage(file)
+      await uploadLiveProductImage(productId, preparedImage)
+      await refreshLiveCatalog()
+      setNotice((product?.name || 'Product') + ' photo uploaded.')
+      return true
+    } catch (error) {
+      setLiveError(error.message)
+      setNotice('Could not upload product photo: ' + error.message)
+      return false
+    }
+  }
+
+  async function removeProductImage(productId) {
+    const product = products.find((item) => item.id === productId)
+    try {
+      await deleteLiveProductImage(productId)
+      await refreshLiveCatalog()
+      setNotice((product?.name || 'Product') + ' photo removed.')
+      return true
+    } catch (error) {
+      setLiveError(error.message)
+      setNotice('Could not remove product photo: ' + error.message)
+      return false
+    }
+  }
+
   async function removeProduct(productId) {
     const product = products.find((item) => item.id === productId)
     if (!product) return
@@ -1277,7 +1309,7 @@ function App() {
           profileLoading
             ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
             : !supabaseConfigured || profile?.role === 'shopkeeper'
-              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onDeleteOffer={deleteOffer} onSaveStoreSettings={saveStoreSettings} onSaveStoreContact={saveStoreContact} onExportReport={exportReport} />
+              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onUploadProductImage={uploadProductImage} onRemoveProductImage={removeProductImage} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onDeleteOffer={deleteOffer} onSaveStoreSettings={saveStoreSettings} onSaveStoreContact={saveStoreContact} onExportReport={exportReport} />
              : <section className="access-gate">
                <h1>Shopkeeper access</h1>
                <p>{!authUser
