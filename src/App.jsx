@@ -146,10 +146,10 @@ function SiteFooter() {
           <strong>Mana Kirana</strong>
           <span>Venkata Kusuma Haranth General Stores</span>
         </div>
-        <nav aria-label="Information and project links">
+        <nav aria-label="Information and contact links">
           <a href="/about/">About</a>
           <a href="/contact/">Contact</a>
-          <a href="https://github.com/VenkataNarayanaAtmakuri/mana-kirana---sql" target="_blank" rel="noreferrer">GitHub source</a>
+          <a href="https://wa.me/917032946299" target="_blank" rel="noreferrer">WhatsApp</a>
         </nav>
         <small>Pickup orders are collected and paid for at the store.</small>
       </div>
