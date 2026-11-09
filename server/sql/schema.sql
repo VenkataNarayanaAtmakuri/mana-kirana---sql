@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   full_name text NOT NULL DEFAULT '',
   phone text NOT NULL UNIQUE,
   password_hash text NOT NULL,
+  recovery_code_hash text,
   role text NOT NULL DEFAULT 'customer' CHECK (role IN ('customer','shopkeeper')),
   phone_verified boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()

@@ -22,7 +22,7 @@ Create a new, empty database in your managed PostgreSQL provider. Do not reuse o
 
 The schema is for a new database. Do not run it against production data without reviewing the SQL and taking a backup.
 
-For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend. The editable public shop contact page uses `server/sql/migrations/20261109_store_contact_details.sql`; apply it before saving contact changes in the shopkeeper dashboard. Product photos use `server/sql/migrations/20261109_product_images.sql`; apply it before deploying catalogue image uploads. Images are resized in the browser and saved in PostgreSQL, so no storage token or extra service is required.
+For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend. The editable public shop contact page uses `server/sql/migrations/20261109_store_contact_details.sql`; apply it before saving contact changes in the shopkeeper dashboard. Password recovery uses `server/sql/migrations/20261109_recovery_codes.sql`; apply it before deploying the recovery-code feature. It stores only hashed, single-use codes and does not require an SMS or email service. Product photos use `server/sql/migrations/20261109_product_images.sql`; apply it before deploying catalogue image uploads. Images are resized in the browser and saved in PostgreSQL, so no storage token or extra service is required.
 
 ## 2. Configure the backend
 
@@ -98,7 +98,7 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 ## Current API endpoints
 
 - `GET /api/health`
-- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `GET /api/auth/me`, `POST /api/auth/logout`
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `POST /api/auth/recovery-code` (create your one-time code), `POST /api/auth/recovery-code/customer` (shopkeeper-issued code after in-person identity check), `POST /api/auth/reset-password`, `GET /api/auth/me`, `POST /api/auth/logout`
 - `GET /api/catalog` (catalogue, current offers, and store availability)
 - `GET /api/orders`, `POST /api/orders` (account mobile required; optional alternate pickup mobile; creates a four-digit pickup PIN)
 - `PATCH /api/orders/:id/status`, `POST /api/orders/:id/collect` (shopkeeper must verify the customer's four-digit pickup PIN)
@@ -117,7 +117,7 @@ The old Supabase realtime channels are replaced with 5-second polling. This is a
 
 - New database is empty: add categories/products through the shopkeeper dashboard after promoting your account.
 - Payments remain demo/pickup-only; no real UPI or payment gateway is integrated.
-- No SMS verification or password-reset flow is included in this first version.
+- Signup does not verify phone ownership. Password reset uses a private, single-use recovery code instead of paid SMS or email; customers who lose the code need the shopkeeper to verify them in person and issue a replacement.
 - A full production security review, CSRF defense for cookie-authenticated mutations, audit logging, backup/restore drill, and deployment-specific TLS/CORS review are still required.
 - Run `npm run build` in the root and `npm run check` / `npm start` in `server` before deployment.
 
