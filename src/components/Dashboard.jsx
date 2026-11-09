@@ -255,7 +255,7 @@ const STARTER_GROCERIES = [
   { name: 'Moong Dal', local: 'పెసరపప్పు', category: 'Grains', unit: 'kg' },
   { name: 'Chana Dal', local: 'శెనగపప్పు', category: 'Grains', unit: 'kg' },
   { name: 'Chickpeas', local: 'శనగలు', category: 'Grains', unit: 'kg' },
-  { name: 'Wheat Flour (Atta)', local: 'గోధుమ పిండి', category: 'Grains', unit: 'kg' },
+  { name: 'Wheat Flour (Atta)', local: 'గోధుమ పిండి', aliases: ['Whole wheat atta'], category: 'Grains', unit: 'kg' },
   { name: 'Ragi Flour', local: 'రాగి పిండి', category: 'Grains', unit: 'kg' },
   { name: 'Iodized Salt (1 kg pack)', local: 'ఉప్పు', category: 'Packaged', unit: 'pack' },
   { name: 'Tea Powder (250 g pack)', local: 'టీ పొడి', category: 'Packaged', unit: 'pack' },
