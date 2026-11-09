@@ -4,13 +4,19 @@ import { formatMoney, formatQuantity, getQuantityOptions } from '../data.js'
 export default function ProductCard({ product, quantity, onChange }) {
   const quantities = getQuantityOptions(product).filter((option) => !option.disabled)
   const [customAmount, setCustomAmount] = useState('')
+  const [customUnit, setCustomUnit] = useState('g')
   const available = Math.max(0, Number(product.stock) || 0)
   const selectedQuantity = Number(quantity) || 0
   const outOfStock = quantities.length === 0
   const customValue = Number(customAmount)
-  const customQuantity = product.unit === 'kg' ? customValue / 1000 : customValue
+  const isLooseProduct = product.unit === 'kg'
+  const customQuantity = isLooseProduct ? customValue / (customUnit === 'kg' ? 1 : 1000) : customValue
   const customValid = Number.isFinite(customValue) && customValue > 0
-    && (product.unit === 'kg' ? Number.isInteger(customValue) && customValue % 10 === 0 : Number.isInteger(customValue))
+    && (isLooseProduct
+      ? customUnit === 'kg'
+        ? Math.abs(customValue * 100 - Math.round(customValue * 100)) < 0.000001
+        : Number.isInteger(customValue) && customValue % 10 === 0
+      : Number.isInteger(customValue))
     && customQuantity <= available + 0.000001
   const tint = String(product.tint || 'default').replace(/[^a-z0-9-]/gi, '') || 'default'
 
@@ -35,10 +41,13 @@ export default function ProductCard({ product, quantity, onChange }) {
               event.preventDefault()
               if (customValid) { onChange(customQuantity); setCustomAmount('') }
             }}>
-              <label className="quantity-picker">
-                <span>{product.unit === 'kg' ? 'Or enter grams' : 'Or enter quantity'}</span>
-                <input aria-label={product.unit === 'kg' ? 'Custom amount in grams for ' + product.name : 'Custom quantity for ' + product.name} type="number" min={product.unit === 'kg' ? '10' : '1'} max={product.unit === 'kg' ? Math.floor(available * 1000) : Math.floor(available)} step={product.unit === 'kg' ? '10' : '1'} inputMode="numeric" placeholder={product.unit === 'kg' ? 'e.g. 250 g' : 'e.g. 4'} value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} />
-              </label>
+              <div className="custom-amount-entry">
+                <label className="quantity-picker">
+                  <span>{isLooseProduct ? 'Custom amount' : 'Custom quantity'}</span>
+                  <input aria-label={isLooseProduct ? 'Custom amount for ' + product.name : 'Custom quantity for ' + product.name} type="number" min={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} max={isLooseProduct ? customUnit === 'kg' ? available : Math.floor(available * 1000) : Math.floor(available)} step={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} inputMode={isLooseProduct && customUnit === 'kg' ? 'decimal' : 'numeric'} placeholder={isLooseProduct ? customUnit === 'kg' ? 'e.g. 1.5' : 'e.g. 250' : 'e.g. 4'} value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} />
+                </label>
+                {isLooseProduct && <select className="custom-quantity-unit" aria-label={'Custom amount unit for ' + product.name} value={customUnit} onChange={(event) => setCustomUnit(event.target.value)}><option value="g">g</option><option value="kg">kg</option></select>}
+              </div>
               <button className="btn quantity-set-button" type="submit" disabled={!customValid}>Set amount</button>
             </form>
             <p className="quantity-stock-note">Available: {formatQuantity(available, product.unit)}</p>
