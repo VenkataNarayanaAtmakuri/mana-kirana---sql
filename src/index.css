@@ -1886,7 +1886,8 @@ body {
   box-shadow: 0 12px 30px rgba(29, 64, 41, .08);
 }
 .cart-heading h2 { font-size: 22px; }
-.empty-cart { border: 1px dashed #d4e3d7; border-radius: 16px; background: #f7fbf7; }
+.empty-cart { border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); background: var(--surface-2); }
+.empty-basket { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 11px; color: var(--primary); background: var(--surface); }
 .bill-total { border-color: #e0e9e2; background: #f5faf6; }
 
 /* Saved lists and account tools are available without crowding the catalogue */
