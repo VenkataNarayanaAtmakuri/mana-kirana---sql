@@ -2,11 +2,32 @@ import express, { Router } from 'express'
 import argon2 from 'argon2'
 import { rateLimit } from 'express-rate-limit'
 import { pool } from './db.js'
-import { createHash, randomInt } from 'node:crypto'
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
 const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
+const recoveryCodeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many recovery code attempts. Try again later.' } })
+const customerRecoveryCodeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many customer recovery code requests. Try again later.' } })
+const recoveryResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password reset attempts. Try again later.' } })
+const RECOVERY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+function createRecoveryCode() {
+  const compact = Array.from(randomBytes(20), (byte) => RECOVERY_CODE_ALPHABET[byte & 31]).join('')
+  return compact.match(/.{4}/g).join('-')
+}
+function normalizeRecoveryCode(value) {
+  return String(value || '').toUpperCase().replace(/[\s-]/g, '')
+}
+function hashRecoveryCode(value) {
+  return createHash('sha256').update(normalizeRecoveryCode(value)).digest('hex')
+}
+function matchesRecoveryCode(storedHash, code) {
+  if (!/^[a-f0-9]{64}$/i.test(String(storedHash || ''))) return false
+  const stored = Buffer.from(storedHash, 'hex')
+  const provided = Buffer.from(hashRecoveryCode(code), 'hex')
+  return stored.length === provided.length && timingSafeEqual(stored, provided)
+}
+const RECOVERY_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{20}$/
 const accountLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many account-link attempts. Try again later.' } })
 const profileUpdateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile update attempts. Try again later.' } })
 const pickupPinLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many pickup PIN attempts. Try again later.' } })
@@ -133,11 +154,12 @@ router.post('/auth/register', authLimiter, async (req, res) => {
   if (fullName.length < 2 || fullName.length > 100) return res.status(400).json({ error: 'Enter a name between 2 and 100 characters.' })
   if (password.length < 8 || password.length > 128) return res.status(400).json({ error: 'Password must be between 8 and 128 characters.' })
   const hash = await argon2.hash(password, { type: argon2.argon2id })
+  const recoveryCode = createRecoveryCode()
   try {
-    const { rows } = await pool.query('INSERT INTO profiles(phone,full_name,password_hash,role,phone_verified) VALUES($1,$2,$3,\'customer\',false) RETURNING id,phone,full_name,role,phone_verified', [phone, fullName, hash])
+    const { rows } = await pool.query('INSERT INTO profiles(phone,full_name,password_hash,role,phone_verified,recovery_code_hash) VALUES($1,$2,$3,\'customer\',false,$4) RETURNING id,phone,full_name,role,phone_verified', [phone, fullName, hash, hashRecoveryCode(recoveryCode)])
     delete req.session.linkedAccount
     req.session.user = publicUser(rows[0])
-    res.status(201).json({ user: req.session.user })
+    res.status(201).json({ user: req.session.user, recoveryCode })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'An account with this phone number already exists. Please sign in.' })
     throw error
@@ -160,6 +182,63 @@ router.post('/auth/login', authLimiter, async (req, res) => {
   delete req.session.linkedAccount
   req.session.user = publicUser(rows[0])
   res.json({ user: req.session.user, linkedAccount: null })
+})
+router.post('/auth/recovery-code', recoveryCodeLimiter, requireAuth, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || '')
+  if (!currentPassword) return res.status(400).json({ error: 'Enter your current password to create a recovery code.' })
+  const { rows } = await pool.query('SELECT password_hash FROM profiles WHERE id=$1', [req.session.user.id])
+  const valid = rows[0] && await argon2.verify(rows[0].password_hash, currentPassword).catch(() => false)
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' })
+
+  const recoveryCode = createRecoveryCode()
+  await pool.query('UPDATE profiles SET recovery_code_hash=$1 WHERE id=$2', [hashRecoveryCode(recoveryCode), req.session.user.id])
+  res.json({ recoveryCode })
+})
+router.post('/auth/recovery-code/customer', customerRecoveryCodeLimiter, requireAuth, requireShopkeeper, async (req, res) => {
+  const phone = phoneE164(req.body.phone)
+  const currentPassword = String(req.body.currentPassword || '')
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit Indian customer mobile number.' })
+  if (phone === req.session.user.phone) return res.status(400).json({ error: 'Use your own recovery code section for this account.' })
+  if (!currentPassword) return res.status(400).json({ error: 'Enter your current password to issue a reset code.' })
+
+  const { rows: shopkeeperRows } = await pool.query('SELECT password_hash FROM profiles WHERE id=$1', [req.session.user.id])
+  const valid = shopkeeperRows[0] && await argon2.verify(shopkeeperRows[0].password_hash, currentPassword).catch(() => false)
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' })
+
+  const { rows: customerRows } = await pool.query("SELECT id FROM profiles WHERE phone=$1 AND role='customer'", [phone])
+  if (!customerRows[0]) return res.status(404).json({ error: 'No customer account was found for that number.' })
+  const recoveryCode = createRecoveryCode()
+  await pool.query('UPDATE profiles SET recovery_code_hash=$1 WHERE id=$2', [hashRecoveryCode(recoveryCode), customerRows[0].id])
+  res.json({ recoveryCode })
+})
+router.post('/auth/reset-password', recoveryResetLimiter, async (req, res) => {
+  const phone = phoneE164(req.body.phone)
+  const recoveryCode = normalizeRecoveryCode(req.body.recoveryCode)
+  const newPassword = String(req.body.newPassword || '')
+  if (!phone || !RECOVERY_CODE_PATTERN.test(recoveryCode)) return res.status(400).json({ error: 'Phone number or recovery code is incorrect.' })
+  if (newPassword.length < 8 || newPassword.length > 128) return res.status(400).json({ error: 'New password must be between 8 and 128 characters.' })
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query('SELECT id,recovery_code_hash FROM profiles WHERE phone=$1 FOR UPDATE', [phone])
+    const profile = rows[0]
+    if (!profile || !matchesRecoveryCode(profile.recovery_code_hash, recoveryCode)) {
+      await client.query('ROLLBACK')
+      return res.status(400).json({ error: 'Phone number or recovery code is incorrect.' })
+    }
+
+    const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id })
+    await client.query('UPDATE profiles SET password_hash=$1,recovery_code_hash=NULL WHERE id=$2', [passwordHash, profile.id])
+    await client.query("DELETE FROM user_sessions WHERE sess->'user'->>'id'=$1 OR sess->'linkedAccount'->>'id'=$1", [profile.id])
+    await client.query('COMMIT')
+    res.json({ ok: true })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 })
 router.post('/auth/link-account', accountLinkLimiter, requireAuth, async (req, res) => {
   const activeUser = req.session.user

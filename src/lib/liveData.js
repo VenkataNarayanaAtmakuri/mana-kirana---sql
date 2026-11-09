@@ -84,6 +84,9 @@ export async function hideLiveOrder(orderId, scope = 'customer') {
 }
 export async function setLiveRequestRate(orderItemId, rate) { return request('/api/order-items/' + orderItemId + '/price', { method: 'PATCH', body: JSON.stringify({ rate }) }) }
 export async function changeLivePassword(currentPassword, newPassword) { return request('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }) }
+export async function createLiveRecoveryCode(currentPassword) { return request('/api/auth/recovery-code', { method: 'POST', body: JSON.stringify({ currentPassword }) }) }
+export async function issueCustomerRecoveryCode(phone, currentPassword) { return request('/api/auth/recovery-code/customer', { method: 'POST', body: JSON.stringify({ phone, currentPassword }) }) }
+export async function resetLivePasswordWithRecoveryCode(phone, recoveryCode, newPassword) { return request('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ phone, recoveryCode, newPassword }) }) }
 function poll(onChange, onStatus, account = false) {
   let active = true
   const check = async () => { try { if (account) await request('/api/auth/me'); if (active) { onChange(); onStatus?.('SUBSCRIBED') } } catch (error) { onStatus?.('ERROR', error) } }

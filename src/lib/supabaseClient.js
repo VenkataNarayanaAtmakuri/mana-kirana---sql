@@ -49,7 +49,7 @@ export const supabase = {
       try {
         const payload = await request('/api/auth/register', { method: 'POST', body: JSON.stringify({ phone, password, fullName: options?.data?.full_name || '' }) })
         if (payload.user) emit('SIGNED_IN', payload.user)
-        return { data: { user: payload.user, session: payload.user ? { user: payload.user } : null }, error: null }
+        return { data: { user: payload.user, session: payload.user ? { user: payload.user } : null, recoveryCode: payload.recoveryCode || null }, error: null }
       } catch (error) { return { data: { user: null, session: null }, error } }
     },
     async linkAccount({ phone, password, expectedRole }) {
