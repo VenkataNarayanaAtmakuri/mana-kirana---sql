@@ -2392,3 +2392,25 @@ button:active:not(:disabled) { transform: translateY(1px); }
 
 .custom-amount-entry { display: flex; align-items: end; gap: 5px; }
 .custom-quantity-unit { width: 68px; min-height: 34px; padding: 5px 6px; font-size: 12px; }
+
+
+/* Product photos uploaded by the shopkeeper */
+.product-photo { width: 100%; height: 100%; display: block; border-radius: inherit; object-fit: cover; }
+.inventory-product { grid-template-columns: 52px minmax(0, 1fr); align-items: center; }
+.inventory-photo-preview { width: 52px; height: 52px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; color: var(--primary); background: var(--surface-2); font-size: 26px; }
+.inventory-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.inventory-product-copy { min-width: 0; display: grid; gap: 1px; }
+.inventory-product-copy > span, .inventory-product-copy > small { color: var(--muted); font-size: 12px; }
+.inventory-product-copy > small { font-size: 11px; }
+.inventory-photo-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.inventory-image-upload, .inventory-image-remove { min-height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: var(--surface); font-size: 11px; font-weight: 700; cursor: pointer; }
+.inventory-image-upload { position: relative; overflow: hidden; }
+.inventory-image-upload input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; cursor: pointer; }
+.inventory-image-upload:focus-within { outline: 3px solid var(--turmeric); outline-offset: 2px; }
+.inventory-image-remove { color: var(--warn); }
+.inventory-image-remove:disabled { opacity: .6; cursor: wait; }
+.inventory-image-error { flex-basis: 100%; color: var(--warn); font-size: 11px; }
+@media (max-width: 760px) {
+  .inventory-product { grid-template-columns: 44px minmax(0, 1fr); }
+  .inventory-photo-preview { width: 44px; height: 44px; font-size: 22px; }
+}

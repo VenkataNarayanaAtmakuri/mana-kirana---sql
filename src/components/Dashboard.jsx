@@ -204,10 +204,12 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
   )
 }
 
-function InventoryRow({ product, onSave, onRemove }) {
+function InventoryRow({ product, onSave, onRemove, onUploadImage, onRemoveImage }) {
   const [price, setPrice] = useState(String(product.price))
   const [stock, setStock] = useState(String(product.stock))
   const [expiresOn, setExpiresOn] = useState(product.expiresOn || '')
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageError, setImageError] = useState('')
   const changed = Number(price) !== product.price || Number(stock) !== product.stock || expiresOn !== (product.expiresOn || '')
 
   useEffect(() => {
@@ -224,12 +226,50 @@ function InventoryRow({ product, onSave, onRemove }) {
     onSave(product.id, { price: nextPrice, stock: nextStock, expiresOn: expiresOn || null })
   }
 
+  async function uploadImage(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setImageError('')
+    setImageBusy(true)
+    try {
+      const saved = await onUploadImage(product.id, file)
+      if (saved === false) setImageError('Upload failed. Choose a JPG, PNG, or WebP image and try again.')
+    } catch (error) {
+      setImageError(error.message || 'Could not upload this image.')
+    } finally { setImageBusy(false) }
+  }
+
+  async function removeImage() {
+    setImageBusy(true)
+    setImageError('')
+    try {
+      const removed = await onRemoveImage(product.id)
+      if (removed === false) setImageError('Could not remove this photo. Try again.')
+    } catch (error) {
+      setImageError(error.message || 'Could not remove this photo.')
+    } finally { setImageBusy(false) }
+  }
+
   return (
     <form className="inventory-row" onSubmit={save}>
       <div className="inventory-product">
-        <strong>{product.name}</strong>
-        {product.local && <span lang="te">{product.local}</span>}
-        <small>{product.category} · price per {product.unit}</small>
+        <div className="inventory-photo-preview">
+          {product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span aria-hidden="true">{product.emoji || '🛍️'}</span>}
+        </div>
+        <div className="inventory-product-copy">
+          <strong>{product.name}</strong>
+          {product.local && <span lang="te">{product.local}</span>}
+          <small>{product.category} · price per {product.unit}</small>
+        </div>
+        <div className="inventory-photo-actions">
+          <label className="inventory-image-upload">
+            <span>{imageBusy ? 'Uploading…' : product.imageUrl ? 'Change photo' : 'Upload photo'}</span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" aria-label={'Upload a product photo for ' + product.name} disabled={imageBusy} onChange={uploadImage} />
+          </label>
+          {product.imageUrl && <button className="inventory-image-remove" type="button" disabled={imageBusy} onClick={removeImage}>Remove photo</button>}
+          {imageError && <small className="inventory-image-error" role="alert">{imageError}</small>}
+        </div>
       </div>
       <label className="inventory-field">
         <span>Rate · ₹</span>
@@ -633,7 +673,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onSaveStoreContact, onExportReport }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onSaveStoreContact, onUploadProductImage, onRemoveProductImage, onExportReport }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const [inventorySearch, setInventorySearch] = useState('')
@@ -714,7 +754,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
         <AddProductForm categories={categories} products={products} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
           <div className="inventory-list-heading"><strong>Catalogue</strong><span>{inventorySearch.trim() ? visibleProducts.length + ' of ' + products.length + ' items' : products.length + ' items'} · quantity is measured in each item’s selling unit</span></div>
-          {visibleProducts.length ? visibleProducts.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} />) : <p className="inventory-no-results">{products.length ? 'No catalogue items match that search.' : 'No catalogue items yet. Add an item above.'}</p>}
+          {visibleProducts.length ? visibleProducts.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} onUploadImage={onUploadProductImage} onRemoveImage={onRemoveProductImage} />) : <p className="inventory-no-results">{products.length ? 'No catalogue items match that search.' : 'No catalogue items yet. Add an item above.'}</p>}
         </div>
       </section> : <section className="store-tools-section">
         <StoreHoursPanel storeStatus={storeStatus} onSave={onSaveStoreSettings} />

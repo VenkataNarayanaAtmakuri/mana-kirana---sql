@@ -1,8 +1,8 @@
-import { Router } from 'express'
+import express, { Router } from 'express'
 import argon2 from 'argon2'
 import { rateLimit } from 'express-rate-limit'
 import { pool } from './db.js'
-import { randomInt } from 'node:crypto'
+import { createHash, randomInt } from 'node:crypto'
 
 const router = Router()
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
@@ -89,6 +89,25 @@ async function readStoreStatus(queryable = pool) {
     statusOverride: setting.status_override || 'auto', closedMessage: setting.closed_message || '',
     storeName: contact.store_name, contactPhone: contact.contact_phone,
     contactAddress: contact.contact_address, mapsUrl: contact.maps_url,
+  }
+}
+const PRODUCT_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const PRODUCT_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+const PRODUCT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function hasValidImageSignature(contentType, data) {
+  if (!Buffer.isBuffer(data)) return false
+  if (contentType === 'image/jpeg') return data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
+  if (contentType === 'image/png') return data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  if (contentType === 'image/webp') return data.length >= 12 && data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP'
+  return false
+}
+async function readCatalogProducts(expiryFilter) {
+  const select = 'SELECT p.*, c.name AS category, photo.updated_at AS image_updated_at FROM products p JOIN categories c ON c.id=p.category_id LEFT JOIN product_images photo ON photo.product_id=p.id WHERE p.active=true AND c.active=true' + expiryFilter + ' ORDER BY p.name'
+  try {
+    return await pool.query(select)
+  } catch (error) {
+    if (error.code !== '42P01') throw error
+    return pool.query('SELECT p.*, c.name AS category, NULL::timestamptz AS image_updated_at FROM products p JOIN categories c ON c.id=p.category_id WHERE p.active=true AND c.active=true' + expiryFilter + ' ORDER BY p.name')
   }
 }
 function roundMoney(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100 }
@@ -251,11 +270,35 @@ router.get('/catalog', async (req, res) => {
   const offerFilter = shopkeeperView ? '' : 'WHERE active=true AND starts_at<=now() AND (ends_at IS NULL OR ends_at>now())'
   const [categories, products, offers, storeStatus] = await Promise.all([
     pool.query('SELECT id,name FROM categories WHERE active=true ORDER BY name'),
-    pool.query('SELECT p.*, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.active=true AND c.active=true' + expiryFilter + ' ORDER BY p.name'),
+    readCatalogProducts(expiryFilter),
     pool.query('SELECT id,title,code,discount_percent,minimum_order,active,starts_at,ends_at FROM offers ' + offerFilter + ' ORDER BY created_at DESC'),
     readStoreStatus(),
   ])
   res.json({ categories: categories.rows, products: products.rows, offers: offers.rows, storeStatus })
+})
+router.get('/products/:id/image', async (req, res) => {
+  if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product image not found.' })
+  try {
+    const { rows } = await pool.query(
+      'SELECT photo.content_type,photo.image_data FROM product_images photo JOIN products p ON p.id=photo.product_id WHERE p.id=$1 AND p.active=true',
+      [req.params.id],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Product image not found.' })
+    const image = rows[0]
+    const etag = '"' + createHash('sha256').update(image.image_data).digest('hex') + '"'
+    if (req.headers['if-none-match'] === etag) return res.status(304).end()
+    res.set({
+      'Content-Type': image.content_type,
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'public, max-age=300',
+      'ETag': etag,
+      'X-Content-Type-Options': 'nosniff',
+    })
+    return res.send(image.image_data)
+  } catch (error) {
+    if (error.code === '42P01') return res.status(503).json({ error: 'Apply server/sql/migrations/20261109_product_images.sql before using catalogue image uploads.' })
+    throw error
+  }
 })
 router.patch('/store-settings', requireAuth, requireShopkeeper, async (req, res) => {
   const hours = normalizeStoreHours(req.body.hours)
@@ -364,6 +407,27 @@ router.post('/products', requireAuth, requireShopkeeper, async (req, res) => {
   const { rows } = await pool.query('INSERT INTO products(name,local,category_id,unit,price,stock,step,emoji,tint,note,expires_on) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id', [String(name).trim(), String(local), categoryId, unit, Number(price), Number(stock), unit === 'kg' ? 0.01 : 1, emoji, 'new', 'Added by the shopkeeper', expiresOn])
   res.status(201).json(rows[0])
 })
+router.put('/products/:id/image', requireAuth, requireShopkeeper, express.raw({ type: PRODUCT_IMAGE_MIME_TYPES, limit: '2mb' }), async (req, res) => {
+  const contentType = String(req.headers['content-type'] || '').split(';')[0].toLowerCase()
+  const imageData = req.body
+  if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product not found.' })
+  if (!PRODUCT_IMAGE_MIME_TYPES.includes(contentType) || !hasValidImageSignature(contentType, imageData)) {
+    return res.status(400).json({ error: 'Upload a valid JPG, PNG, or WebP image.' })
+  }
+  if (imageData.length > PRODUCT_IMAGE_MAX_BYTES) return res.status(413).json({ error: 'Product images must be 2 MB or smaller after resizing.' })
+  const product = await pool.query('SELECT id FROM products WHERE id=$1 AND active=true', [req.params.id])
+  if (!product.rows[0]) return res.status(404).json({ error: 'Product not found.' })
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO product_images(product_id,content_type,image_data) VALUES($1,$2,$3) ON CONFLICT(product_id) DO UPDATE SET content_type=EXCLUDED.content_type,image_data=EXCLUDED.image_data,updated_at=now() RETURNING updated_at',
+      [req.params.id, contentType, imageData],
+    )
+    res.json({ imageUpdatedAt: rows[0].updated_at })
+  } catch (error) {
+    if (error.code === '42P01') return res.status(503).json({ error: 'Apply server/sql/migrations/20261109_product_images.sql before using catalogue image uploads.' })
+    throw error
+  }
+})
 router.patch('/products/:id', requireAuth, requireShopkeeper, async (req, res) => {
   const price = Number(req.body.price), stock = Number(req.body.stock)
   const hasExpiry = Object.prototype.hasOwnProperty.call(req.body, 'expiresOn')
@@ -372,6 +436,16 @@ router.patch('/products/:id', requireAuth, requireShopkeeper, async (req, res) =
   const { rows } = await pool.query('UPDATE products SET price=$1,stock=$2,expires_on=CASE WHEN $3::boolean THEN $4::date ELSE expires_on END,updated_at=now() WHERE id=$5 AND active=true RETURNING id', [price, stock, hasExpiry, expiresOn, req.params.id])
   if (!rows[0]) return res.status(404).json({ error: 'Product not found.' })
   res.json(rows[0])
+})
+router.delete('/products/:id/image', requireAuth, requireShopkeeper, async (req, res) => {
+  if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product image not found.' })
+  try {
+    await pool.query('DELETE FROM product_images WHERE product_id=$1', [req.params.id])
+    res.json({ removed: true })
+  } catch (error) {
+    if (error.code === '42P01') return res.status(503).json({ error: 'Apply server/sql/migrations/20261109_product_images.sql before using catalogue image uploads.' })
+    throw error
+  }
 })
 router.delete('/products/:id', requireAuth, requireShopkeeper, async (req, res) => {
   const { rows } = await pool.query('UPDATE products SET active=false,updated_at=now() WHERE id=$1 AND active=true RETURNING id', [req.params.id])

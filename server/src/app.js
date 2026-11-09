@@ -21,6 +21,7 @@ app.use(session({
 app.use('/api', routes)
 app.use((error, _req, res, _next) => {
   console.error(error?.stack || error)
+  if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Product images must be 2 MB or smaller after resizing.' })
   if (error?.code === '23505') return res.status(409).json({ error: 'A record with that value already exists.' })
   res.status(500).json({ error: 'Unexpected server error. Check the API logs.' })
 })

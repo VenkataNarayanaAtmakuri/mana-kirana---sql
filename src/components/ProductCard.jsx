@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatMoney, formatQuantity, getQuantityOptions } from '../data.js'
 
 export default function ProductCard({ product, quantity, onChange }) {
   const quantities = getQuantityOptions(product).filter((option) => !option.disabled)
   const [customAmount, setCustomAmount] = useState('')
   const [customUnit, setCustomUnit] = useState('g')
+  const [imageFailed, setImageFailed] = useState(false)
+  useEffect(() => setImageFailed(false), [product.imageUrl])
   const available = Math.max(0, Number(product.stock) || 0)
   const selectedQuantity = Number(quantity) || 0
   const outOfStock = quantities.length === 0
@@ -22,7 +24,7 @@ export default function ProductCard({ product, quantity, onChange }) {
 
   return (
     <li className={'item' + (selectedQuantity > 0 ? ' is-selected' : '')}>
-      <div className={'product-art product-art-' + tint} aria-hidden="true">{product.emoji || '🛍️'}</div>
+      <div className={'product-art product-art-' + tint}>{product.imageUrl && !imageFailed ? <img className="product-photo" src={product.imageUrl} alt={product.name} loading="lazy" onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{product.emoji || '🛍️'}</span>}</div>
       <div className="info">
         <div className="nm">
           <strong className="product-name">{product.name}</strong>
