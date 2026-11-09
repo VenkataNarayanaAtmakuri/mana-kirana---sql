@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS store_settings (
   hours jsonb NOT NULL DEFAULT '{"mon":{"open":"08:00","close":"21:00","closed":false},"tue":{"open":"08:00","close":"21:00","closed":false},"wed":{"open":"08:00","close":"21:00","closed":false},"thu":{"open":"08:00","close":"21:00","closed":false},"fri":{"open":"08:00","close":"21:00","closed":false},"sat":{"open":"08:00","close":"21:00","closed":false},"sun":{"open":"08:00","close":"21:00","closed":false}}'::jsonb,
   status_override text NOT NULL DEFAULT 'auto' CHECK(status_override IN ('auto','open','closed')),
   closed_message text NOT NULL DEFAULT 'The shop is closed right now.',
+  store_name text NOT NULL DEFAULT 'Venkata Kusuma Haranth General Stores',
+  contact_phone text NOT NULL DEFAULT '+917032946299',
+  contact_address text NOT NULL DEFAULT '',
+  maps_url text NOT NULL DEFAULT 'https://maps.app.goo.gl/AaYVR9dbwqkwm7H29',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO store_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING;

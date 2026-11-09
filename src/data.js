@@ -45,22 +45,10 @@ export function formatReadyTime(timestamp) {
 
 export function getQuantityOptions(product) {
   const available = Math.min(100, Math.max(0, Number(product.stock) || 0))
-  if (product.unit !== 'kg') {
-    return Array.from({ length: 100 }, (_, index) => {
-      const value = index + 1
-      return { value, label: formatQuantity(value, product.unit), disabled: value > available + 0.000001 }
-    })
-  }
-
-  const amounts = new Set()
-  for (let grams = 10; grams <= 1000; grams += 10) amounts.add(grams / 1000)
-  for (let grams = 1250; grams <= 10_000; grams += 250) amounts.add(grams / 1000)
-  for (let kilograms = 11; kilograms <= 100; kilograms += 1) amounts.add(kilograms)
-  if (available > 0 && available <= 100) amounts.add(Math.round(available * 100) / 100)
-
-  return [...amounts]
-    .sort((a, b) => a - b)
-    .map((value) => ({ value, label: formatQuantity(value, 'kg'), disabled: value > available + 0.000001 }))
+  const amounts = product.unit === 'kg' ? [0.25, 0.5, 1, 2, 5] : [1, 2, 3, 5]
+  if (available > 0 && !amounts.some((value) => Math.abs(value - available) < 0.000001)) amounts.push(available)
+  return [...new Set(amounts)].sort((a, b) => a - b)
+    .map((value) => ({ value, label: formatQuantity(value, product.unit), disabled: value > available + 0.000001 }))
 }
 
 export function orderChannelLabel(channel) {

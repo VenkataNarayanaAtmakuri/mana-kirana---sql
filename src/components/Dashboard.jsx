@@ -251,7 +251,17 @@ function InventoryRow({ product, onSave, onRemove }) {
   )
 }
 
-function AddProductForm({ categories, onAddProduct, voiceLanguage }) {
+const STARTER_GROCERIES = [
+  { name: 'Moong Dal', local: 'పెసరపప్పు', category: 'Grains', unit: 'kg' },
+  { name: 'Chana Dal', local: 'శెనగపప్పు', category: 'Grains', unit: 'kg' },
+  { name: 'Chickpeas', local: 'శనగలు', category: 'Grains', unit: 'kg' },
+  { name: 'Wheat Flour (Atta)', local: 'గోధుమ పిండి', aliases: ['Whole wheat atta'], category: 'Grains', unit: 'kg' },
+  { name: 'Ragi Flour', local: 'రాగి పిండి', category: 'Grains', unit: 'kg' },
+  { name: 'Iodized Salt (1 kg pack)', local: 'ఉప్పు', category: 'Packaged', unit: 'pack' },
+  { name: 'Tea Powder (250 g pack)', local: 'టీ పొడి', category: 'Packaged', unit: 'pack' },
+]
+
+function AddProductForm({ categories, products = [], onAddProduct, voiceLanguage }) {
   const [name, setName] = useState('')
   const [local, setLocal] = useState('')
   const [category, setCategory] = useState(categories[0] || '')
@@ -264,6 +274,20 @@ function AddProductForm({ categories, onAddProduct, voiceLanguage }) {
   useEffect(() => {
     if (!categories.includes(category)) setCategory(categories[0] || '')
   }, [categories, category])
+
+  function chooseStarter(item) {
+    const matchingCategory = categories.find((candidate) => candidate.toLocaleLowerCase() === item.category.toLocaleLowerCase())
+      || categories.find((candidate) => candidate.toLocaleLowerCase() === 'other')
+      || categories[0] || ''
+    setName(item.name)
+    setLocal(item.local)
+    setCategory(matchingCategory)
+    setUnit(item.unit)
+    setPrice('')
+    setStock('')
+    setExpiresOn('')
+    setError('')
+  }
 
   async function submit(event) {
     event.preventDefault()
@@ -286,6 +310,15 @@ function AddProductForm({ categories, onAddProduct, voiceLanguage }) {
   return (
     <form className="add-product-form" onSubmit={submit}>
       <div className="add-product-heading"><div><h3>Add a catalogue item</h3><p>Type or speak the English and Telugu names, then enter the rate and stock.</p></div><span className="add-product-icon"><Plus size={18} /></span></div>
+      <div className="starter-grocery-panel">
+        <strong>Quick-add common groceries</strong>
+        <p>Choose a starter, then enter your current local rate and stock before saving.</p>
+        <div className="starter-grocery-list">{STARTER_GROCERIES.filter((item) => !products.some((product) => {
+          const existing = String(product.name || '').toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+          const candidates = [item.name, ...(item.aliases || [])].map((value) => value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())
+          return candidates.some((candidate) => candidate && existing === candidate)
+        })).map((item) => <button type="button" key={item.name} onClick={() => chooseStarter(item)}>{item.name} <span lang="te">{item.local}</span></button>)}</div>
+      </div>
       <div className="add-product-fields">
         <label className="catalogue-voice-field"><span>Item name</span><div className="inventory-voice-entry"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Moong dal" required /><VoiceDictationButton language={voiceLanguage} onTranscript={setName} label="Speak" /></div></label>
         <label className="catalogue-voice-field"><span>Telugu name <small>optional</small></span><div className="inventory-voice-entry"><input value={local} onChange={(event) => setLocal(event.target.value)} placeholder="స్థానిక పేరు" /><VoiceDictationButton language={voiceLanguage} onTranscript={setLocal} label="Speak" /></div></label>
@@ -423,6 +456,47 @@ const STORE_DAYS = [
 ]
 const DEFAULT_HOURS = Object.fromEntries(STORE_DAYS.map(([key]) => [key, { open: '08:00', close: '21:00', closed: false }]))
 
+function StoreContactPanel({ storeStatus, onSave }) {
+  const [storeName, setStoreName] = useState(storeStatus?.storeName || 'Venkata Kusuma Haranth General Stores')
+  const [contactPhone, setContactPhone] = useState(storeStatus?.contactPhone || '+917032946299')
+  const [contactAddress, setContactAddress] = useState(storeStatus?.contactAddress || '')
+  const [mapsUrl, setMapsUrl] = useState(storeStatus?.mapsUrl || 'https://maps.app.goo.gl/AaYVR9dbwqkwm7H29')
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const contactKey = JSON.stringify([storeStatus?.storeName, storeStatus?.contactPhone, storeStatus?.contactAddress, storeStatus?.mapsUrl])
+  useEffect(() => {
+    if (dirty) return
+    setStoreName(storeStatus?.storeName || 'Venkata Kusuma Haranth General Stores')
+    setContactPhone(storeStatus?.contactPhone || '+917032946299')
+    setContactAddress(storeStatus?.contactAddress || '')
+    setMapsUrl(storeStatus?.mapsUrl || 'https://maps.app.goo.gl/AaYVR9dbwqkwm7H29')
+  }, [contactKey, dirty])
+  function update(setter, value) { setter(value); setDirty(true); setError('') }
+  async function submit(event) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    const saved = await onSave({ storeName, contactPhone, contactAddress, mapsUrl })
+    if (saved) setDirty(false)
+    else setError('Could not save these details. Check the notice above and try again.')
+    setBusy(false)
+  }
+  return (
+    <section className="store-contact-panel" aria-label="Shop contact details">
+      <div className="store-hours-heading"><div><h2>Shop contact details</h2><p>These details appear on the public Contact page and can be updated here.</p></div></div>
+      <form onSubmit={submit}>
+        <label><span>Shop name</span><input required maxLength={120} value={storeName} onChange={(event) => update(setStoreName, event.target.value)} /></label>
+        <label><span>Phone number</span><input required type="tel" inputMode="tel" maxLength={24} value={contactPhone} onChange={(event) => update(setContactPhone, event.target.value)} /></label>
+        <label><span>Address or area <small>optional</small></span><input maxLength={240} value={contactAddress} onChange={(event) => update(setContactAddress, event.target.value)} placeholder="Add a street or area customers recognize" /></label>
+        <label><span>Google Maps link</span><input required type="url" maxLength={500} value={mapsUrl} onChange={(event) => update(setMapsUrl, event.target.value)} /></label>
+        <div className="store-contact-actions"><small>Publicly visible to anyone who opens Contact.</small><button className="btn primary" type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save contact details'}</button></div>
+      </form>
+      {error && <p className="inventory-error" role="alert">{error}</p>}
+    </section>
+  )
+}
+
 function StoreHoursPanel({ storeStatus, onSave }) {
   const [hours, setHours] = useState(() => storeStatus?.hours || DEFAULT_HOURS)
   const [statusOverride, setStatusOverride] = useState(storeStatus?.statusOverride || 'auto')
@@ -559,7 +633,7 @@ function CategoryManager({ categories, onAddCategory, onRemoveCategory }) {
   )
 }
 
-export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onExportReport }) {
+export default function Dashboard({ orders, products, categories, onAddCategory, onRemoveCategory, onUpdateOrder, onSetRequestedItemRate, onDeleteOrder, deletingOrderId = '', onResetSamples, onSaveProduct, onAddProduct, onRemoveProduct, liveMode = false, realtimeConnected = false, shopkeeperName = 'Ramesh', notificationEnabled = false, notificationPermission = 'unsupported', onToggleNotifications, onLoadDailySales, onLoadRestock, offers = [], storeStatus = null, onCreateOffer, onToggleOffer, onDeleteOffer, onSaveStoreSettings, onSaveStoreContact, onExportReport }) {
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const [inventorySearch, setInventorySearch] = useState('')
@@ -637,13 +711,14 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
           <label><span>Voice language</span><select value={voiceLanguage} onChange={(event) => setVoiceLanguage(event.target.value)} aria-label="Voice search language"><option value="te-IN">తెలుగు</option><option value="en-IN">English</option></select></label>
           <VoiceDictationButton language={voiceLanguage} onTranscript={setInventorySearch} label="Voice search" successMessage="Catalogue search updated." />
         </div>
-        <AddProductForm categories={categories} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
+        <AddProductForm categories={categories} products={products} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
           <div className="inventory-list-heading"><strong>Catalogue</strong><span>{inventorySearch.trim() ? visibleProducts.length + ' of ' + products.length + ' items' : products.length + ' items'} · quantity is measured in each item’s selling unit</span></div>
           {visibleProducts.length ? visibleProducts.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} />) : <p className="inventory-no-results">{products.length ? 'No catalogue items match that search.' : 'No catalogue items yet. Add an item above.'}</p>}
         </div>
       </section> : <section className="store-tools-section">
         <StoreHoursPanel storeStatus={storeStatus} onSave={onSaveStoreSettings} />
+        <StoreContactPanel storeStatus={storeStatus} onSave={onSaveStoreContact} />
         <OfferManager offers={offers} onCreateOffer={onCreateOffer} onToggleOffer={onToggleOffer} onDeleteOffer={onDeleteOffer} />
       </section>}
     </section>
