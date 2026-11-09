@@ -2813,3 +2813,30 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .auth-dialog { max-height: calc(100dvh - 20px); padding: 19px; }
   .recovery-code-value { font-size: 12px; letter-spacing: .04em; }
 }
+
+
+/* Dark theme contrast fixes for account switching and the live dashboard note */
+:root[data-theme="dark"] .account-switch-button {
+  color: var(--ink);
+  border-color: var(--primary);
+  background: var(--surface-2);
+}
+:root[data-theme="dark"] .account-switch-button:hover:not(:disabled) {
+  color: var(--on-primary);
+  border-color: var(--primary);
+  background: var(--primary);
+}
+:root[data-theme="dark"] .live-banner {
+  color: #355541;
+  border-color: #a8d6b8;
+  background: #e7f5eb;
+}
+:root[data-theme="dark"] .live-banner strong {
+  color: #1f3b29;
+}
+:root[data-theme="dark"] .live-banner span {
+  color: #46644f;
+}
+:root[data-theme="dark"] .live-banner .demo-banner-icon {
+  color: #278449;
+}
