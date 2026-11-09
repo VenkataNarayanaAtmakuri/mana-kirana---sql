@@ -2650,3 +2650,93 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .dashboard-stats { grid-template-columns: 1fr 1fr; }
   .stat-icon { width: 29px; height: 29px; }
 }
+
+
+/* Mobile navigation and content flow refinements */
+@media (max-width: 560px) {
+  .top { position: static; }
+  .top-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 0 10px;
+  }
+  .brand { width: 100%; max-width: 100%; overflow: hidden; }
+  .brand-copy { overflow: hidden; }
+  .brand-copy small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabs {
+    width: 100%;
+    max-width: 100%;
+    justify-content: space-between;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; white-space: nowrap; }
+  .account-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 6px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .account-actions .account-button {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 5px;
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .account-actions .account-button:last-child { grid-column: 1 / -1; }
+  .help-button {
+    position: static;
+    width: max-content;
+    min-height: 38px;
+    margin: 14px 0 0 auto;
+    border-radius: 999px;
+    box-shadow: none;
+  }
+  .customer-page .order-filters,
+  .dashboard-page .order-filters {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .order-filters button { flex: 0 0 auto; white-space: nowrap; }
+  .order-list { grid-template-columns: minmax(0, 1fr); }
+  .customer-page .quantity-quick-picks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .customer-page .quantity-quick-pick {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .customer-page .ctl { grid-template-columns: minmax(0, 1fr); }
+  .customer-page .selected-total { justify-self: start; }
+  .order-card { padding: 13px; }
+  .site-footer { margin-top: 18px; }
+}
+@media (max-width: 380px) {
+  .brand-copy small { max-width: calc(100vw - 66px); }
+  .account-actions .account-button { font-size: 10px; }
+  .customer-page .item { grid-template-columns: 56px minmax(0, 1fr); gap: 9px; padding: 11px; }
+  .customer-page .product-art { width: 56px; height: 56px; }
+  .customer-page .quantity-quick-pick { font-size: 10px; }
+}
