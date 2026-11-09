@@ -39,6 +39,7 @@ export async function createLiveOffer(details) { return request('/api/offers', {
 export async function updateLiveOffer(offerId, active) { return request('/api/offers/' + encodeURIComponent(offerId), { method: 'PATCH', body: JSON.stringify({ active }) }) }
 export async function deleteLiveOffer(offerId) { return request('/api/offers/' + encodeURIComponent(offerId), { method: 'DELETE' }) }
 export async function updateLiveStoreSettings(details) { return request('/api/store-settings', { method: 'PATCH', body: JSON.stringify(details) }) }
+export async function updateLiveStoreContact(details) { return request('/api/store-contact', { method: 'PATCH', body: JSON.stringify(details) }) }
 export async function validateLiveOffer(code, subtotal) { return request('/api/offers/validate', { method: 'POST', body: JSON.stringify({ code, subtotal }) }) }
 export async function downloadLiveReport(type, date) {
   const query = new URLSearchParams({ type })

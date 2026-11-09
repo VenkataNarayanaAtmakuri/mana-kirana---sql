@@ -43,9 +43,33 @@ function normalizeDateOnly(value) {
   const parsed = new Date(value + 'T00:00:00.000Z')
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? undefined : value
 }
+const DEFAULT_STORE_CONTACT = {
+  store_name: 'Venkata Kusuma Haranth General Stores',
+  contact_phone: '+917032946299',
+  contact_address: '',
+  maps_url: 'https://maps.app.goo.gl/AaYVR9dbwqkwm7H29',
+}
+function normalizeStoreMapUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim())
+    const host = url.hostname.toLowerCase()
+    const approvedHost = host === 'maps.app.goo.gl' || host === 'maps.google.com'
+      || host === 'google.com' || host === 'www.google.com'
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !approvedHost) return null
+    if ((host === 'google.com' || host === 'www.google.com') && !url.pathname.startsWith('/maps')) return null
+    return url.toString()
+  } catch { return null }
+}
 async function readStoreStatus(queryable = pool) {
   const { rows } = await queryable.query('SELECT hours,status_override,closed_message FROM store_settings WHERE id=1')
   const setting = rows[0] || { hours: DEFAULT_STORE_HOURS, status_override: 'auto', closed_message: 'The shop is closed right now.' }
+  let contact = DEFAULT_STORE_CONTACT
+  try {
+    const result = await queryable.query('SELECT store_name,contact_phone,contact_address,maps_url FROM store_settings WHERE id=1')
+    contact = { ...DEFAULT_STORE_CONTACT, ...(result.rows[0] || {}) }
+  } catch (error) {
+    if (error.code !== '42703') throw error
+  }
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date())
   const value = (type) => parts.find((part) => part.type === type)?.value || ''
   const day = ({ Mon: 'mon', Tue: 'tue', Wed: 'wed', Thu: 'thu', Fri: 'fri', Sat: 'sat', Sun: 'sun' })[value('weekday')] || 'mon'
@@ -60,7 +84,12 @@ async function readStoreStatus(queryable = pool) {
       : today.closed
         ? 'Closed today · check the opening hours'
         : 'Closed now · opens at ' + today.open + ' IST'
-  return { acceptingOrders, message, hours: setting.hours || DEFAULT_STORE_HOURS, statusOverride: setting.status_override || 'auto', closedMessage: setting.closed_message || '' }
+  return {
+    acceptingOrders, message, hours: setting.hours || DEFAULT_STORE_HOURS,
+    statusOverride: setting.status_override || 'auto', closedMessage: setting.closed_message || '',
+    storeName: contact.store_name, contactPhone: contact.contact_phone,
+    contactAddress: contact.contact_address, mapsUrl: contact.maps_url,
+  }
 }
 function roundMoney(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100 }
 async function findActiveOffer(queryable, code) {
@@ -240,6 +269,26 @@ router.patch('/store-settings', requireAuth, requireShopkeeper, async (req, res)
     [JSON.stringify(hours), statusOverride, closedMessage || 'The shop is closed right now.'],
   )
   res.json(await readStoreStatus())
+})
+router.patch('/store-contact', requireAuth, requireShopkeeper, async (req, res) => {
+  const storeName = String(req.body.storeName || '').trim()
+  const contactPhone = phoneE164(req.body.contactPhone)
+  const contactAddress = String(req.body.contactAddress || '').trim()
+  const mapsUrl = normalizeStoreMapUrl(req.body.mapsUrl)
+  if (!storeName || storeName.length > 120) return res.status(400).json({ error: 'Enter a shop name of 1 to 120 characters.' })
+  if (!contactPhone) return res.status(400).json({ error: 'Enter a valid Indian mobile number.' })
+  if (contactAddress.length > 240) return res.status(400).json({ error: 'The address must be 240 characters or fewer.' })
+  if (!mapsUrl || mapsUrl.length > 500) return res.status(400).json({ error: 'Use a Google Maps link from maps.app.goo.gl or google.com/maps.' })
+  try {
+    await pool.query(
+      'INSERT INTO store_settings(id,store_name,contact_phone,contact_address,maps_url) VALUES(1,$1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET store_name=EXCLUDED.store_name,contact_phone=EXCLUDED.contact_phone,contact_address=EXCLUDED.contact_address,maps_url=EXCLUDED.maps_url,updated_at=now()',
+      [storeName, contactPhone, contactAddress, mapsUrl],
+    )
+    res.json(await readStoreStatus())
+  } catch (error) {
+    if (error.code === '42703') return res.status(503).json({ error: 'Apply server/sql/migrations/20261109_store_contact_details.sql to the database before saving shop contact details.' })
+    throw error
+  }
 })
 router.post('/offers/validate', offerValidationLimiter, async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase()

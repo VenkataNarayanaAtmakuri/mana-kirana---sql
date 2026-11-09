@@ -22,7 +22,7 @@ Create a new, empty database in your managed PostgreSQL provider. Do not reuse o
 
 The schema is for a new database. Do not run it against production data without reviewing the SQL and taking a backup.
 
-For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend.
+For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend. The editable public shop contact page uses `server/sql/migrations/20261109_store_contact_details.sql`; apply it before saving contact changes in the shopkeeper dashboard.
 
 ## 2. Configure the backend
 

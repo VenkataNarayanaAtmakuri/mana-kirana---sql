@@ -35,6 +35,7 @@ import {
   updateLiveOffer,
   updateLiveProduct,
   updateLiveStoreSettings,
+  updateLiveStoreContact,
   validateLiveOffer,
 } from './lib/liveData.js'
 import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
@@ -681,6 +682,19 @@ function App() {
     } catch (error) { setLiveError(error.message); setNotice('Could not save store hours: ' + error.message); return false }
   }
 
+  async function saveStoreContact(details) {
+    try {
+      await updateLiveStoreContact(details)
+      await refreshLiveCatalog()
+      setNotice('Shop contact details saved.')
+      return true
+    } catch (error) {
+      setLiveError(error.message)
+      setNotice('Could not save shop contact details: ' + error.message)
+      return false
+    }
+  }
+
   async function exportReport(type, date) {
     try {
       await downloadLiveReport(type, date)
@@ -1263,7 +1277,7 @@ function App() {
           profileLoading
             ? <section className="access-gate"><h2>Checking account access…</h2><p>Please wait while the selected profile loads.</p></section>
             : !supabaseConfigured || profile?.role === 'shopkeeper'
-              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onDeleteOffer={deleteOffer} onSaveStoreSettings={saveStoreSettings} onExportReport={exportReport} />
+              ? <Dashboard orders={visibleOrders} products={products} categories={categories} onAddCategory={addCategory} onRemoveCategory={removeCategory} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} deletingOrderId={deletingOrderId} onSetRequestedItemRate={setRequestedItemRate} onResetSamples={resetSamples} onSaveProduct={saveProduct} onAddProduct={addProduct} onRemoveProduct={removeProduct} liveMode={supabaseConfigured} realtimeConnected={realtimeConnected} shopkeeperName={profile?.full_name || (supabaseConfigured ? 'Shopkeeper' : 'Ramesh')} notificationEnabled={notificationsEnabled} notificationPermission={notificationPermission} onToggleNotifications={toggleOrderNotifications} onLoadDailySales={fetchDailySales} onLoadRestock={fetchRestockSuggestions} offers={offers} storeStatus={storeStatus} onCreateOffer={createOffer} onToggleOffer={toggleOffer} onDeleteOffer={deleteOffer} onSaveStoreSettings={saveStoreSettings} onSaveStoreContact={saveStoreContact} onExportReport={exportReport} />
              : <section className="access-gate">
                <h1>Shopkeeper access</h1>
                <p>{!authUser
@@ -1379,7 +1393,7 @@ function App() {
           </div>
         </div>
       )}
-      <button className="help-button" type="button" onClick={() => setNotice('For this prototype, all orders are for pickup at Venkata Kusuma Haranth General Stores.')}><CircleHelp size={16} /><span>Need help?</span></button>
+      <a className="help-button" href="/contact/"><CircleHelp size={16} /><span>Need help?</span></a>
       {showSignOutDialog && (
         <div
           className="auth-overlay"
