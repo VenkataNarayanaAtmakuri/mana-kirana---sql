@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { formatMoney, formatQuantity, getQuantityOptions } from '../data.js'
+import { formatMoney, getQuantityOptions } from '../data.js'
 
 export default function ProductCard({ product, quantity, onChange }) {
   const quantities = getQuantityOptions(product).filter((option) => !option.disabled)
@@ -34,7 +34,7 @@ export default function ProductCard({ product, quantity, onChange }) {
         <div className="rate">{formatMoney(product.price)} <span>/ {product.unit}</span></div>
       </div>
       <div className="ctl">
-        {outOfStock ? <span className="badge b-warn">Out of stock</span> : (
+        {outOfStock ? <div className="quantity-controls quantity-unavailable"><span className="badge b-warn" role="status">Out of stock</span></div> : (
           <div className="quantity-controls">
             <div className="quantity-quick-picks" aria-label={'Common amounts of ' + product.name}>
               {quantities.map((option) => <button className="quantity-quick-pick" key={option.value} type="button" aria-pressed={Math.abs(selectedQuantity - Number(option.value)) < 0.000001} onClick={() => onChange(Number(option.value))}>{option.label}</button>)}
@@ -52,7 +52,6 @@ export default function ProductCard({ product, quantity, onChange }) {
               </div>
               <button className="btn quantity-set-button" type="submit" disabled={!customValid}>Set amount</button>
             </form>
-            <p className="quantity-stock-note">Available: {formatQuantity(available, product.unit)}</p>
             {selectedQuantity > 0 && <button className="quantity-clear-button" type="button" onClick={() => onChange(0)}>Remove</button>}
           </div>
         )}
