@@ -2389,3 +2389,6 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .store-contact-panel .store-hours-heading { margin-bottom: 0; }
 @media (max-width: 620px) { .store-contact-panel > form { grid-template-columns: 1fr; } .store-contact-actions { grid-column: auto; } }
 .help-button { text-decoration: none; }
+
+.custom-amount-entry { display: flex; align-items: end; gap: 5px; }
+.custom-quantity-unit { width: 68px; min-height: 34px; padding: 5px 6px; font-size: 12px; }
