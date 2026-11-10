@@ -418,12 +418,12 @@ router.post('/offers/validate', offerValidationLimiter, async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase()
   const subtotal = Number(req.body.subtotal)
   if (!/^[A-Z0-9-]{3,24}$/.test(code)) return res.status(400).json({ error: 'Enter a valid offer code.' })
-  if (!Number.isFinite(subtotal) || subtotal <= 200) return res.status(400).json({ error: 'Add priced items worth more than ₹200 before applying an offer.' })
+  if (!Number.isFinite(subtotal) || subtotal < 100) return res.status(400).json({ error: 'Add priced items worth at least ₹100 before applying an offer.' })
   const offer = await findActiveOffer(pool, code)
   if (!offer) return res.status(404).json({ error: 'This offer code is invalid, expired, or inactive.' })
   if (subtotal < Number(offer.minimum_order)) return res.status(400).json({ error: 'This offer requires a confirmed subtotal of at least ₹' + Number(offer.minimum_order).toFixed(0) + '.' })
   const discountAmount = roundMoney(subtotal * Number(offer.discount_percent) / 100)
-  if (roundMoney(subtotal - discountAmount) <= 200) return res.status(400).json({ error: 'The discount would bring the order below the ₹200 minimum. Add more items to use this code.' })
+  if (roundMoney(subtotal - discountAmount) < 100) return res.status(400).json({ error: 'The discount would bring the order below the ₹100 minimum. Add more items to use this code.' })
   res.json({ id: offer.id, title: offer.title, code: offer.code, discountPercent: Number(offer.discount_percent), minimumOrder: Number(offer.minimum_order), discountAmount, discountedTotal: roundMoney(subtotal - discountAmount) })
 })
 router.post('/offers', requireAuth, requireShopkeeper, async (req, res) => {
@@ -657,7 +657,7 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
   }
 })
 router.post('/orders', requireAuth, async (req, res) => {
-  const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, payment, items } = req.body
+  const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, items } = req.body
   const offerCode = String(req.body.offerCode || '').trim().toUpperCase()
   const acceptedPriceChanges = new Map()
   for (const change of Array.isArray(req.body.acceptedPriceChanges) ? req.body.acceptedPriceChanges : []) {
@@ -710,7 +710,7 @@ router.post('/orders', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'Catalogue prices changed. Review the current prices before placing the order.', priceChanges })
     }
     subtotal = roundMoney(subtotal)
-    if (subtotal <= 200) throw new Error('The confirmed item subtotal must be more than ₹200.')
+    if (subtotal < 100) throw new Error('The confirmed item subtotal must be at least ₹100.')
     let discountAmount = 0
     let appliedOffer = null
     if (offerCode) {
@@ -720,13 +720,13 @@ router.post('/orders', requireAuth, async (req, res) => {
       discountAmount = roundMoney(subtotal * Number(appliedOffer.discount_percent) / 100)
     }
     const total = roundMoney(subtotal - discountAmount)
-    if (total <= 200) throw new Error('The order total after discount must remain above ₹200.')
+    if (total < 100) throw new Error('The order total after discount must be at least ₹100.')
     const queue = await client.query("SELECT COALESCE(MAX(estimated_ready_at),now()) AS latest FROM orders WHERE status IN ('pending','preparing')")
     const count = await client.query("SELECT count(*)::int AS n FROM orders WHERE status IN ('pending','preparing') AND estimated_ready_at IS NULL")
     const latest = new Date(queue.rows[0].latest).getTime()
     const ready = new Date(Math.max(Date.now() + (count.rows[0].n + 1) * 15 * 60000, latest + 15 * 60000))
     const pickupPin = String(randomInt(0, 10000)).padStart(4, '0')
-    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, hasCustom ? 'pickup' : payment === 'upi_demo' ? 'upi_demo' : 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
+    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
     for (const item of normalized) {
       if (!item.custom) await client.query('UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
