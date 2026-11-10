@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS orders (
   status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','preparing','ready','collected','rejected')),
   payment_method text NOT NULL CHECK(payment_method IN ('pickup','upi_demo')),
   subtotal numeric(12,2) NOT NULL DEFAULT 0, discount_amount numeric(12,2) NOT NULL DEFAULT 0, offer_code text,
-  total numeric(12,2) NOT NULL CHECK(total > 200), estimated_ready_at timestamptz NOT NULL,
+  total numeric(12,2) NOT NULL CHECK(total >= 100), estimated_ready_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS orders_customer_created_idx ON orders(customer_id,created_at DESC);
