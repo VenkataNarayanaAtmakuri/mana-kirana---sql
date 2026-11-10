@@ -79,6 +79,7 @@ const pickupPinOrderLimiter = createPersistentRateLimiter({ namespace: 'pickup-p
 const offerValidationLimiter = createPersistentRateLimiter({ namespace: 'offer-validation', windowMs: 15 * 60 * 1000, limit: 30, message: 'Too many offer checks. Try again later.' })
 const orderIpLimiter = createPersistentRateLimiter({ namespace: 'order-ip', windowMs: 60 * 60 * 1000, limit: 30, message: 'Too many orders from this network. Try again later.' })
 const orderCustomerLimiter = createPersistentRateLimiter({ namespace: 'order-customer', windowMs: 60 * 60 * 1000, limit: 10, message: 'Too many orders from this account. Try again later.', keyFor: (req) => req.session.user?.id || req.ip })
+const availabilityLimiter = createPersistentRateLimiter({ namespace: 'catalog-availability', windowMs: 15 * 60 * 1000, limit: 120, message: 'Too many availability checks. Try again later.' })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
   if (digits.length === 10 && /^[6-9]/.test(digits)) return '+91' + digits
@@ -426,6 +427,33 @@ router.get('/catalog', async (req, res) => {
     ? products.rows
     : products.rows.map(({ stock, ...product }) => ({ ...product, in_stock: Number(stock) > 0 }))
   res.json({ categories: categories.rows, products: publicProducts, offers: offers.rows, storeStatus })
+})
+router.post('/catalog/availability', availabilityLimiter, async (req, res) => {
+  const requestedItems = req.body?.items
+  if (!Array.isArray(requestedItems) || requestedItems.length < 1 || requestedItems.length > 50) {
+    return res.status(400).json({ error: 'Choose between 1 and 50 catalogue items to check.' })
+  }
+  const requested = new Map()
+  for (const item of requestedItems) {
+    const productId = String(item?.productId || '').toLowerCase()
+    const quantity = Number(item?.quantity)
+    if (!PRODUCT_ID_PATTERN.test(productId) || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000) {
+      return res.status(400).json({ error: 'A product or quantity is invalid.' })
+    }
+    requested.set(productId, (requested.get(productId) || 0) + quantity)
+  }
+  const productIds = [...requested.keys()]
+  const { rows } = await pool.query(
+    "SELECT id,stock FROM products WHERE id=ANY($1::uuid[]) AND active=true AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date)",
+    [productIds],
+  )
+  const stockById = new Map(rows.map((row) => [row.id, Number(row.stock)]))
+  res.json({
+    items: productIds.map((productId) => ({
+      productId,
+      available: stockById.has(productId) && stockById.get(productId) >= requested.get(productId),
+    })),
+  })
 })
 router.get('/products/:id/image', async (req, res) => {
   if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product image not found.' })
