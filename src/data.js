@@ -45,7 +45,7 @@ export function formatReadyTime(timestamp) {
 
 export function getQuantityOptions(product) {
   const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
-  const available = stockKnown ? Math.min(100, Math.max(0, Number(product.stock) || 0)) : 100
+  const available = stockKnown ? Math.min(100, Math.max(0, Number(product.stock) || 0)) : null
   const amounts = product.unit === 'kg' ? [0.25, 0.5, 1, 2, 5] : [1, 2, 3, 5]
   if (stockKnown && available > 0 && !amounts.some((value) => Math.abs(value - available) < 0.000001)) amounts.push(available)
   return [...new Set(amounts)].sort((a, b) => a - b)
