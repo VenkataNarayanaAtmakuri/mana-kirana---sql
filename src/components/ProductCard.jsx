@@ -8,7 +8,7 @@ export default function ProductCard({ product, quantity, onChange }) {
   const [imageFailed, setImageFailed] = useState(false)
   useEffect(() => setImageFailed(false), [product.imageUrl])
   const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
-  const available = stockKnown ? Math.max(0, Number(product.stock) || 0) : 100
+  const available = stockKnown ? Math.max(0, Number(product.stock) || 0) : null
   const selectedQuantity = Number(quantity) || 0
   const outOfStock = stockKnown ? quantities.length === 0 : product.inStock !== true
   const customValue = Number(customAmount)
@@ -20,7 +20,7 @@ export default function ProductCard({ product, quantity, onChange }) {
         ? Math.abs(customValue * 100 - Math.round(customValue * 100)) < 0.000001
         : Number.isInteger(customValue) && customValue % 10 === 0
       : Number.isInteger(customValue))
-    && customQuantity <= available + 0.000001
+    && (!stockKnown || customQuantity <= available + 0.000001)
   const tint = String(product.tint || 'default').replace(/[^a-z0-9-]/gi, '') || 'default'
 
   return (
@@ -47,7 +47,7 @@ export default function ProductCard({ product, quantity, onChange }) {
               <div className="custom-amount-entry">
                 <label className="quantity-picker">
                   <span>{isLooseProduct ? 'Custom amount' : 'Custom quantity'}</span>
-                  <input aria-label={isLooseProduct ? 'Custom amount for ' + product.name : 'Custom quantity for ' + product.name} type="number" min={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} max={isLooseProduct ? customUnit === 'kg' ? available : Math.floor(available * 1000) : Math.floor(available)} step={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} inputMode={isLooseProduct && customUnit === 'kg' ? 'decimal' : 'numeric'} placeholder={isLooseProduct ? customUnit === 'kg' ? 'e.g. 1.5' : 'e.g. 250' : 'e.g. 4'} value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} />
+                  <input aria-label={isLooseProduct ? 'Custom amount for ' + product.name : 'Custom quantity for ' + product.name} type="number" min={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} max={stockKnown ? isLooseProduct ? customUnit === 'kg' ? available : Math.floor(available * 1000) : Math.floor(available) : undefined} step={isLooseProduct ? customUnit === 'kg' ? '0.01' : '10' : '1'} inputMode={isLooseProduct && customUnit === 'kg' ? 'decimal' : 'numeric'} placeholder={isLooseProduct ? customUnit === 'kg' ? 'e.g. 1.5' : 'e.g. 250' : 'e.g. 4'} value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} />
                 </label>
                 {isLooseProduct && <select className="custom-quantity-unit" aria-label={'Custom amount unit for ' + product.name} value={customUnit} onChange={(event) => setCustomUnit(event.target.value)}><option value="g">g</option><option value="kg">kg</option></select>}
               </div>
