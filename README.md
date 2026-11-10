@@ -16,7 +16,7 @@ This app uses a React/Vite frontend, an Express REST API, and PostgreSQL. `src/l
 **Customer**
 
 - Browse the shared grocery catalogue, search by name, choose quantities, and request an unlisted item.
-- Place online pre-orders or entrance-QR orders, provide an optional alternate pickup number, and track order status and history.
+- Place grocery pickup orders online or from the entrance QR. Orders require at least ₹100 in confirmed items; payment is made at the shop when collecting. Customers can track order status and history.
 - Save regular shopping lists, use active offers, and view a monthly spending summary.
 
 **Shopkeeper**
@@ -49,6 +49,7 @@ For an existing database, apply each migration once, in filename order, before d
 3. `server/sql/migrations/20261109_product_images.sql` — adds PostgreSQL-backed catalogue images.
 4. `server/sql/migrations/20261109_recovery_codes.sql` — adds hashed, single-use password recovery codes; no SMS or email service is required.
 5. `server/sql/migrations/20261109_store_contact_details.sql` — adds editable public shop contact details.
+6. `server/sql/migrations/20261110_minimum_order_100.sql` — updates the order total constraint to allow the new ₹100 minimum.
 
 For a new database, run the current `server/sql/schema.sql` once instead of applying these migrations. Do not run the fresh-database schema against an existing database.
 
