@@ -158,27 +158,13 @@ function SiteFooter() {
   )
 }
 
-function OrderMode({ channel, onChange }) {
-  const modes = [
-    { id: 'entrance', title: 'Scanned entrance QR', detail: "I'm at the shop door" },
-    { id: 'online', title: 'Ordering online', detail: "I'm at home, will come later" },
-  ]
-  const notes = {
-    entrance: 'You scanned the entrance QR. Choose your groceries while you walk in, then collect them from the pickup shelf when they are ready.',
-    online: 'Ordering from home. Choose your groceries now, then visit the shop when your pickup is ready.',
-  }
-
+function OrderMode({ channel }) {
   return (
-    <div>
-      <div className="modes" role="group" aria-label="Choose an ordering mode">
-        {modes.map((mode) => (
-          <button key={mode.id} className="mode" type="button" aria-pressed={channel === mode.id} onClick={() => onChange(mode.id)}>
-            <strong>{mode.title}</strong><span>{mode.detail}</span>
-          </button>
-        ))}
-      </div>
-      <p className="mode-note">{notes[channel]}</p>
-    </div>
+    <p className="mode-note">
+      {channel === 'entrance'
+        ? 'Place your order from the entrance QR, then collect it at the shop when it is ready.'
+        : 'Place your order online, then collect it at the shop when it is ready.'}
+    </p>
   )
 }
 
@@ -213,7 +199,7 @@ function UnlistedItemForm({ onAdd }) {
 function App() {
   const [view, setView] = useState(getInitialView)
   const [theme, setTheme] = useState(readThemePreference)
-  const [channel, setChannel] = useState(getInitialChannel)
+  const [channel] = useState(getInitialChannel)
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
   const [voiceSearchLanguage, setVoiceSearchLanguage] = useState('en-IN')
@@ -255,7 +241,6 @@ function App() {
   const [customerName, setCustomerName] = useState('')
   const [phone, setPhone] = useState('')
   const [alternatePickupPhone, setAlternatePickupPhone] = useState('')
-  const [payment, setPayment] = useState('pickup')
   const [successOrderId, setSuccessOrderId] = useState('')
   const [successOrderSnapshot, setSuccessOrderSnapshot] = useState(null)
   const [mobileCartOpen, setMobileCartOpen] = useState(false)
@@ -936,15 +921,6 @@ function App() {
     setNotice(product.name + ' removed from the customer catalogue.')
   }
 
-  function selectChannel(next) {
-    setChannel(next)
-    setSuccessOrderId('')
-    const url = new URL(window.location.href)
-    if (next === 'online') url.searchParams.delete('mode')
-    else url.searchParams.set('mode', next)
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash)
-  }
-
   async function submitOrder(event) {
     event.preventDefault()
     if (!cartItems.length && !customItems.length) return
@@ -952,12 +928,12 @@ function App() {
       setNotice(storeStatus.message || 'The shop is closed right now.')
       return
     }
-    if (cartTotal <= MINIMUM_ORDER_VALUE) {
-      setNotice('The confirmed item subtotal must be more than ₹200. Unpriced requests do not count toward the minimum.')
+    if (cartTotal < MINIMUM_ORDER_VALUE) {
+      setNotice('The confirmed item subtotal must be at least ₹100. Unpriced requests do not count toward the minimum.')
       return
     }
-    if (coupon && discountedTotal <= MINIMUM_ORDER_VALUE) {
-      setNotice('Add more items so the order remains above ₹200 after the offer.')
+    if (coupon && discountedTotal < MINIMUM_ORDER_VALUE) {
+      setNotice('Add more items so the order remains at least ₹100 after the offer.')
       return
     }
     if (supabaseConfigured && !authUser) {
@@ -993,7 +969,7 @@ function App() {
           phone: digits,
           pickupPhone: pickupDigits ? '+91' + pickupDigits : null,
           channel,
-          payment: customItems.length ? 'pickup' : payment === 'upi' ? 'upi_demo' : 'pickup',
+          payment: 'pickup',
           offerCode: coupon?.code || '',
           items: [
             ...cartItems.map((item) => ({ product_id: item.id, name: item.name, emoji: item.emoji, quantity: item.quantity, unit: item.unit, price: item.price, line_total: Math.round(item.price * item.quantity * 100) / 100, custom: false, price_confirmed: true })),
@@ -1049,7 +1025,7 @@ function App() {
       pickupPhone: pickupDigits ? '+91 ' + pickupDigits : '',
       channel,
       status: 'pending',
-      payment: customItems.length ? 'Pay at pickup · requested prices pending' : payment === 'upi' ? 'UPI · demo only' : 'Pay at pickup · demo',
+      payment: customItems.length ? 'Pay at pickup · requested prices pending' : 'Pay at pickup · demo',
       total: cartTotal,
       estimatedReadyAt: calculateReadyAt(orders),
       createdAt: new Date().toISOString(),
@@ -1236,8 +1212,6 @@ function App() {
       accountPhone: authUser?.phone || '',
       alternatePickupPhone,
       onAlternatePickupPhoneChange: setAlternatePickupPhone,
-      payment,
-      onPaymentChange: setPayment,
       onSubmit: submitOrder,
       channelLabel: orderChannelLabel(channel),
       successOrderId,
@@ -1318,11 +1292,11 @@ function App() {
             </section>}
             {supabaseConfigured && authUser && customerMessages.length > 0 && <section className="account-messages" aria-label="Order updates"><div><h2>Your order updates</h2><span>Live messages for this account</span></div><ul>{customerMessages.slice(0, 4).map((message) => <li key={message.id}><span>{message.body}</span><time>{new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(message.created_at))}</time></li>)}</ul></section>}
             <div className="shopping-info-bar" aria-label="Pickup and ordering information">
-              <div><span className="shopping-info-icon">₹</span><span><strong>Order above ₹200</strong><small>Pending-price requests don’t count</small></span></div>
+              <div><span className="shopping-info-icon">₹</span><span><strong>Minimum order ₹100</strong><small>Pending-price requests don’t count</small></span></div>
               <div><span className="shopping-info-icon">15m</span><span><strong>Quick store pickup</strong><small>Slots are scheduled every 15 minutes</small></span></div>
               <div><span className="shopping-info-icon">+</span><span><strong>Need another item?</strong><small>Request it below; the shop confirms the price</small></span></div>
             </div>
-            <OrderMode channel={channel} onChange={selectChannel} />
+            <OrderMode channel={channel} />
             {supabaseConfigured && !authUser && <p className="account-prompt"><strong>Ready to order?</strong> Sign in once to check out with your account mobile number. <button type="button" onClick={() => { setAuthDialogRole('customer'); setShowAuthDialog(true) }}>Sign in</button></p>}
             {liveLoading && products.length === 0 ? <div className="empty-results"><strong>Loading the shared catalogue…</strong></div> : <div className="shop-layout" id="shop-products">
               <section className="catalog-section" aria-label="Products">
