@@ -32,7 +32,7 @@ export async function fetchLiveOrders(scope = 'customer') {
       id: orderLabel(row.order_number), dbId: row.id, name: row.customer_name,
       phone: row.customer_phone || '', pickupPhone: row.pickup_phone || '', channel: row.channel, status: row.status,
       payment: row.payment_method === 'upi_demo' ? 'UPI · demo only' : 'Pay at pickup', total: Number(row.total), subtotal: Number(row.subtotal ?? row.total), discountAmount: Number(row.discount_amount || 0), offerCode: row.offer_code || '', pickupPin: row.pickup_pin || '', createdAt: row.created_at,
-      estimatedReadyAt: row.estimated_ready_at, readyAt, shopkeeperRemoved: Boolean(row.shopkeeper_removed), updatedAt: row.updated_at, sample: false, stockDeducted: true,
+      estimatedReadyAt: row.estimated_ready_at, readyAt, shopkeeperRemoved: Boolean(row.shopkeeper_removed), updatedAt: row.updated_at, sample: false, stockDeducted: Boolean(row.stock_deducted),
       items: (row.items || []).map((item) => ({ id: item.id, productId: item.product_id || item.id, name: item.item_name, emoji: item.emoji || (item.custom_request ? '📝' : '🛍️'), quantity: Number(item.quantity), unit: item.unit, price: item.price == null ? null : Number(item.price), lineTotal: item.line_total == null ? null : Number(item.line_total), custom: item.custom_request, priced: item.price_confirmed })),
     }
   })
