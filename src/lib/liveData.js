@@ -8,8 +8,9 @@ export async function fetchLiveCatalog() {
     products: data.products.map((row) => ({
       id: row.id, name: row.name, local: row.local || '', category: row.category || 'Other', categoryId: row.category_id,
       price: Number(row.price), unit: row.unit, step: Number(row.step) || 1,
-      // Customer catalogue returns availability only; checkout validates the real stock on the server.
-      stock: row.stock == null ? (row.in_stock === true ? 100 : 0) : Number(row.stock),
+      // Exact inventory is sent only to shopkeepers. Customer quantities are checked by the API at checkout.
+      stock: row.stock == null ? null : Number(row.stock),
+      inStock: row.stock == null ? row.in_stock === true : Number(row.stock) > 0,
       emoji: row.emoji || '🛍️', tint: row.tint || 'new', note: row.note || '',
       expiresOn: row.expires_on || '',
       imageUrl: row.image_updated_at ? API_URL + '/api/products/' + encodeURIComponent(row.id) + '/image?v=' + encodeURIComponent(row.image_updated_at) : '',
