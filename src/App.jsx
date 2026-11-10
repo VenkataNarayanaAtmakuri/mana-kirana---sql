@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Check, CircleHelp, Moon, Sun } from 'lucide-react'
+import { ArrowRight, Check, CircleHelp, Mic, MicOff, Moon, Sun } from 'lucide-react'
 import AuthDialog from './components/AuthDialog.jsx'
 import AccountSwitcherDialog from './components/AccountSwitcherDialog.jsx'
 import ChangePasswordDialog from './components/ChangePasswordDialog.jsx'
@@ -42,6 +42,7 @@ import {
 } from './lib/liveData.js'
 import { supabase, supabaseConfigured } from './lib/supabaseClient.js'
 import { prepareProductImage } from './lib/productImage.js'
+import { useVoiceRecognition } from './lib/useVoiceRecognition.js'
 
 function getInitialView() {
   const pathname = typeof window === 'undefined' ? '/' : window.location.pathname.replace(/\/+$/, '') || '/'
@@ -216,9 +217,12 @@ function App() {
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
   const [voiceSearchLanguage, setVoiceSearchLanguage] = useState('te-IN')
-  const [voiceSearchActive, setVoiceSearchActive] = useState(false)
-  const [voiceSearchMessage, setVoiceSearchMessage] = useState('')
-  const voiceRecognitionRef = useRef(null)
+  const {
+    listening: voiceSearchActive,
+    message: voiceSearchMessage,
+    supported: voiceSearchSupported,
+    toggle: toggleVoiceSearch,
+  } = useVoiceRecognition({ language: voiceSearchLanguage, onTranscript: setSearch })
   const [cart, setCart] = useState({})
   const [customItems, setCustomItems] = useState([])
   const [orders, setOrders] = useState(() => supabaseConfigured ? [] : readOrders())
@@ -593,7 +597,6 @@ function App() {
   }
 
   const catalogCategories = useMemo(() => [...new Set(products.map((product) => product.category))], [products])
-  const voiceSearchSupported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
   const categories = useMemo(() => supabaseConfigured
     ? remoteCategories.map((item) => item.name)
     : [...new Set([...catalogCategories, ...customCategories])], [catalogCategories, customCategories, remoteCategories])
@@ -940,52 +943,6 @@ function App() {
     if (next === 'online') url.searchParams.delete('mode')
     else url.searchParams.set('mode', next)
     window.history.replaceState(null, '', url.pathname + url.search + url.hash)
-  }
-
-  function toggleVoiceSearch() {
-    if (voiceRecognitionRef.current) {
-      voiceRecognitionRef.current.stop()
-      return
-    }
-    const Recognition = typeof window === 'undefined' ? null : window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!Recognition) {
-      setVoiceSearchMessage('Voice search is not supported in this browser. You can type your search instead.')
-      return
-    }
-    const recognition = new Recognition()
-    recognition.lang = voiceSearchLanguage
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onresult = (event) => {
-      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim()
-      if (transcript) {
-        setSearch(transcript)
-        setVoiceSearchMessage('Searching for “' + transcript + '”.')
-      } else {
-        setVoiceSearchMessage('I could not hear a product name. Try again or type it.')
-      }
-    }
-    recognition.onerror = (event) => {
-      setVoiceSearchMessage(event.error === 'not-allowed'
-        ? 'Allow microphone access in your browser to use voice search.'
-        : event.error === 'no-speech'
-          ? 'No speech was detected. Try again or type your search.'
-          : 'Voice search could not start. Try again or type your search.')
-    }
-    recognition.onend = () => {
-      voiceRecognitionRef.current = null
-      setVoiceSearchActive(false)
-    }
-    voiceRecognitionRef.current = recognition
-    setVoiceSearchActive(true)
-    setVoiceSearchMessage('Listening…')
-    try {
-      recognition.start()
-    } catch {
-      voiceRecognitionRef.current = null
-      setVoiceSearchActive(false)
-      setVoiceSearchMessage('Voice search could not start. Try again or type your search.')
-    }
   }
 
   async function submitOrder(event) {
@@ -1375,11 +1332,12 @@ function App() {
                         <option value="te-IN">తెలుగు</option>
                         <option value="en-IN">English</option>
                       </select>
-                      <button className="voice-search-button" type="button" onClick={toggleVoiceSearch} aria-label={voiceSearchActive ? 'Stop voice search' : 'Start voice search'} aria-pressed={voiceSearchActive} title={voiceSearchSupported ? 'Speak a product name in Telugu or English' : 'Voice search is not supported in this browser'}>
-                        {voiceSearchActive ? 'Stop listening' : '🎙 Speak'}
+                      <button className="voice-search-button" type="button" onClick={toggleVoiceSearch} aria-label={voiceSearchActive ? 'Stop voice search' : 'Start voice search'} aria-pressed={voiceSearchActive} title={voiceSearchSupported ? 'Speak a product name in Telugu or English' : 'Voice recognition may not be available in this browser'}>
+                        {voiceSearchActive ? <MicOff size={16} aria-hidden="true" /> : <Mic size={16} aria-hidden="true" />}
+                        <span>{voiceSearchActive ? 'Stop listening' : 'Speak'}</span>
                       </button>
                     </div>
-                    {voiceSearchMessage && <p className="voice-search-message" role="status">{voiceSearchMessage}</p>}
+                    {voiceSearchMessage && <p className="voice-search-message" data-listening={voiceSearchActive ? 'true' : 'false'} role="status" aria-live="polite" aria-atomic="true">{voiceSearchMessage}</p>}
                   </div>
                   <div className="category-list" role="group" aria-label="Product categories">
                     {['All items', ...catalogCategories].map((item) => (
