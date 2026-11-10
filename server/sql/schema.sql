@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS orders (
   pickup_phone text, pickup_pin text NOT NULL CHECK (pickup_pin ~ '^[0-9]{4}$'),
   channel text NOT NULL CHECK(channel IN ('online','entrance')),
   status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','preparing','ready','collected','rejected')),
+  stock_deducted boolean NOT NULL DEFAULT false,
   payment_method text NOT NULL CHECK(payment_method IN ('pickup','upi_demo')),
   subtotal numeric(12,2) NOT NULL DEFAULT 0, discount_amount numeric(12,2) NOT NULL DEFAULT 0, offer_code text,
   total numeric(12,2) NOT NULL CHECK(total >= 100), estimated_ready_at timestamptz NOT NULL,
