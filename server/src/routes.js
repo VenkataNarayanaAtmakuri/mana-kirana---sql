@@ -610,7 +610,7 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Order not found.' })
     }
 
-    let canHideFromHistory = order.status === 'collected'
+    let canHideFromHistory = order.status === 'collected' || order.status === 'rejected'
     if (scope === 'shopkeeper' && order.status === 'ready') {
       const readyMessages = await client.query(
         `SELECT MAX(created_at) AS ready_at
@@ -636,8 +636,8 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
     if (!canHideFromHistory) {
       await client.query('ROLLBACK')
       const error = scope === 'shopkeeper'
-        ? 'A ready order can be removed from the admin list after 24 hours.'
-        : 'You can remove a ready order after the shopkeeper removes it from their active list.'
+        ? 'Declined and collected orders can be removed from the admin list. Ready orders can be removed after 24 hours.'
+        : 'Declined and collected orders can be removed from your history. Ready orders can be removed after the shopkeeper removes them from their active list.'
       return res.status(409).json({ error })
     }
 
