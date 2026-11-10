@@ -1,5 +1,6 @@
 -- Shared PostgreSQL-backed request limits and the express-pg-simple session table.
--- Safe to apply to an existing database. Existing tables and session rows are preserved.
+-- Apply before deploying the new API. During rollout the default preserves old-app stock deductions.
+-- Run 20261110_finalize_stock_tracking_default.sql after the new API is deployed.
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS user_sessions (
@@ -20,7 +21,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted boolean;
 UPDATE orders
 SET stock_deducted = (status IN ('pending','preparing','ready','collected'))
 WHERE stock_deducted IS NULL;
-ALTER TABLE orders ALTER COLUMN stock_deducted SET DEFAULT false;
+ALTER TABLE orders ALTER COLUMN stock_deducted SET DEFAULT true;
 ALTER TABLE orders ALTER COLUMN stock_deducted SET NOT NULL;
 
 COMMIT;
