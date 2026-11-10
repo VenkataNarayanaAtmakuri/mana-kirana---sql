@@ -803,7 +803,6 @@ router.post('/orders', requireAuth, orderIpLimiter, orderCustomerLimiter, async 
     const pickupPin = String(randomInt(0, 10000)).padStart(4, '0')
     const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
     for (const item of normalized) {
-      if (!item.custom) await client.query('UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
     }
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [req.session.user.id, order.rows[0].id, `Order MK-${String(order.rows[0].order_number).padStart(6,'0')} received.`])
@@ -847,11 +846,31 @@ router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, r
     const allowed = { pending: ['preparing','rejected'], preparing: ['ready'], ready: [] }
     if (next === 'collected') throw new ApiError(400, 'Verify the customer’s 4-digit pickup PIN to complete collection.')
     if (!(allowed[order.status] || []).includes(next)) throw new ApiError(400, 'Invalid order status transition.')
-    if (next === 'rejected') {
-      const items = await client.query('SELECT product_id,quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL', [order.id])
+    if (next === 'preparing') {
+      const items = await client.query(
+        'SELECT product_id,SUM(quantity)::numeric AS quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL GROUP BY product_id ORDER BY product_id',
+        [order.id],
+      )
+      for (const item of items.rows) {
+        const reserved = await client.query(
+          "UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2 AND active=true AND stock >= $1 AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date) RETURNING id",
+          [item.quantity, item.product_id],
+        )
+        if (!reserved.rows[0]) throw new ApiError(409, 'An item in this order no longer has enough stock. Review the order and decline it if needed.')
+      }
+      await client.query('UPDATE orders SET stock_deducted=true WHERE id=$1', [order.id])
+    }
+    if (next === 'rejected' && order.stock_deducted) {
+      const items = await client.query(
+        'SELECT product_id,SUM(quantity)::numeric AS quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL GROUP BY product_id',
+        [order.id],
+      )
       for (const item of items.rows) await client.query('UPDATE products SET stock=stock+$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
     }
-    await client.query('UPDATE orders SET status=$1,updated_at=now() WHERE id=$2', [next, order.id])
+    await client.query(
+      "UPDATE orders SET status=$1,updated_at=now(),stock_deducted=CASE WHEN $1='rejected' THEN false ELSE stock_deducted END WHERE id=$2",
+      [next, order.id],
+    )
     const body = next === 'preparing' ? 'Your order is being prepared.' : next === 'ready' ? 'Your order is ready for pickup. Your 4-digit pickup PIN is ' + order.pickup_pin + '. Show it to the shopkeeper when collecting.' : next === 'collected' ? 'Your order has been collected. Thank you!' : 'Your order was declined. Please contact the shop.'
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [order.customer_id, order.id, body])
     await client.query('COMMIT'); res.json({ id: order.id, status: next })
