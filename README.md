@@ -125,23 +125,21 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 
 ## API endpoints
 
-All routes below are prefixed with `/api`.
+The routes below are relative to the configured backend URL.
 
 - Health: `GET /health`
 - Authentication: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/change-password`, `POST /auth/recovery-code`, `POST /auth/recovery-code/customer`, `POST /auth/reset-password`, `POST /auth/link-account`, `POST /auth/switch-account`
 - Profiles: `GET /profile/:id`, `PATCH /profile/:id`
-- Catalogue: `GET /catalog`; product management uses `POST /products`, `PATCH /products/:id`, and `DELETE /products/:id`
+- Catalogue and categories: `GET /catalog`, `POST /categories`, `DELETE /categories/:id`
+- Products: `POST /products`, `PATCH /products/:id`, `DELETE /products/:id`
 - Product photos: `GET /products/:id/image`, `PUT /products/:id/image`, `DELETE /products/:id/image`
 - Orders: `GET /orders`, `POST /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/collect`, `DELETE /orders/:id`
-- Requested-item pricing: `PATCH /order-items/:id/price`
-- Customer spending summary: `GET /customer/spending-summary`
+- Order pricing: `PATCH /order-items/:id/price`
+- Customer spending: `GET /customer/spending-summary`
 - Offers: `POST /offers/validate`, `POST /offers`, `PATCH /offers/:id`, `DELETE /offers/:id`
 - Store settings and public contact: `PATCH /store-settings`, `PATCH /store-contact`
-- Categories: `POST /categories`, `DELETE /categories/:id`
-- Shopkeeper reports: `GET /reports/daily-sales`, `GET /reports/restock`, `GET /reports/export.csv?type=sales|inventory`
 - Account updates: `GET /messages`
-
-The old Supabase realtime channels are replaced with 5-second polling. This is a simple first implementation; WebSockets can be added later if needed.
+- Shopkeeper reports: `GET /reports/restock`, `GET /reports/daily-sales`, `GET /reports/export.csv`
 
 ## Important limitations to test before production
 
