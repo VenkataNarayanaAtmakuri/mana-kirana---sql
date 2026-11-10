@@ -349,7 +349,27 @@ router.post('/auth/change-password', passwordChangeLimiter, requireAuth, async (
   if (reusesCurrentPassword) return res.status(400).json({ error: 'Choose a new password different from your current one.' })
 
   const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id })
-  await pool.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, req.session.user.id])
+  const signedInUser = req.session.user
+  const linkedAccount = req.session.linkedAccount || null
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, signedInUser.id])
+    await client.query(
+      "DELETE FROM user_sessions WHERE sess->'user'->>'id'=$1 OR sess->'linkedAccount'->>'id'=$1",
+      [signedInUser.id],
+    )
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+  await regenerateSession(req)
+  req.session.user = signedInUser
+  if (linkedAccount) req.session.linkedAccount = linkedAccount
+  await saveSession(req)
   res.json({ ok: true })
 })
 router.get('/auth/me', (req, res) => res.json({ user: req.session.user || null, linkedAccount: req.session.user ? req.session.linkedAccount || null : null }))
