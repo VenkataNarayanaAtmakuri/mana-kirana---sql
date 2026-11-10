@@ -16,4 +16,11 @@ CREATE TABLE IF NOT EXISTS api_rate_limits (
 );
 CREATE INDEX IF NOT EXISTS api_rate_limits_reset_at_idx ON api_rate_limits(reset_at);
 
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted boolean;
+UPDATE orders
+SET stock_deducted = (status IN ('pending','preparing','ready','collected'))
+WHERE stock_deducted IS NULL;
+ALTER TABLE orders ALTER COLUMN stock_deducted SET DEFAULT false;
+ALTER TABLE orders ALTER COLUMN stock_deducted SET NOT NULL;
+
 COMMIT;
