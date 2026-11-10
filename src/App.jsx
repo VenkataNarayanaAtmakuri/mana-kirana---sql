@@ -14,6 +14,7 @@ import { formatMoney, formatReadyTime, makeSampleOrders, MINIMUM_ORDER_VALUE, or
 import {
   archiveLiveCategory,
   archiveLiveProduct,
+  checkLiveAvailability,
   createLiveCategory,
   createLiveProduct,
   createLiveOffer,
@@ -251,6 +252,7 @@ function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
   const notificationEnabledRef = useRef(false)
+  const availabilitySequence = useRef(new Map())
   const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
 
   useLayoutEffect(() => {
@@ -693,13 +695,32 @@ function App() {
     } catch (error) { setLiveError(error.message); setNotice('Could not download CSV: ' + error.message) }
   }
 
-  function changeQuantity(productId, quantity) {
+  async function changeQuantity(productId, quantity) {
     const product = products.find((item) => item.id === productId)
     if (!product) return
     const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
-    if (!stockKnown && product.inStock !== true && quantity > 0.001) {
-      setNotice(product.name + ' is out of stock.')
-      return
+    const requestVersion = (availabilitySequence.current.get(productId) || 0) + 1
+    availabilitySequence.current.set(productId, requestVersion)
+    if (!stockKnown && quantity > 0.001) {
+      if (product.inStock !== true) {
+        setNotice(product.name + ' is out of stock.')
+        return
+      }
+      if (supabaseConfigured) {
+        try {
+          const result = await checkLiveAvailability([{ productId, quantity }])
+          if (availabilitySequence.current.get(productId) !== requestVersion) return
+          if (!result.items?.[0]?.available) {
+            setNotice(product.name + ' is not available in that quantity. Choose a smaller amount and try again.')
+            return
+          }
+        } catch (error) {
+          if (availabilitySequence.current.get(productId) === requestVersion) {
+            setNotice('Could not check stock. Try again in a moment.')
+          }
+          return
+        }
+      }
     }
     if (stockKnown && quantity > Number(product.stock) + 0.001) {
       setNotice('That amount isn’t available. Choose a smaller quantity or try again later.')
