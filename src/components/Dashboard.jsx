@@ -113,7 +113,7 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
       )}
       <div className="order-card-bottom">
         <div><span>{order.payment}</span><strong>{formatMoney(order.total)}</strong>{order.discountAmount > 0 && <small className="order-total-note">Subtotal {formatMoney(order.subtotal)} · offer {order.offerCode} saved {formatMoney(order.discountAmount)}</small>}{unpricedCount > 0 && <small className="order-total-note">Confirmed subtotal · {unpricedCount} requested {unpricedCount === 1 ? 'item' : 'items'} awaiting rate</small>}</div>
-        {(primaryAction || order.status === 'collected') && (
+        {(primaryAction || order.status === 'collected' || order.status === 'rejected') && (
           <div className="order-actions">
             {primaryAction && (order.status !== 'ready' || !liveMode) && (
               <>
@@ -125,9 +125,9 @@ function OrderCard({ order, onUpdate, onDeleteOrder, deletingOrderId, onSetReque
                 </button>
               </>
             )}
-            {order.status === 'collected' && (
+            {(order.status === 'collected' || order.status === 'rejected') && (
               <button className="reject-button" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id}>
-                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
+                <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : order.status === 'rejected' ? 'Remove declined order' : 'Remove from my history'}
               </button>
             )}
             {readyDelete && (
