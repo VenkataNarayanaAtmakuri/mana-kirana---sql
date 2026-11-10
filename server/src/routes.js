@@ -773,7 +773,8 @@ router.post('/orders', requireAuth, orderIpLimiter, orderCustomerLimiter, async 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    await client.query('SELECT id FROM profiles WHERE id=$1 FOR UPDATE', [req.session.user.id])
+    const customerProfile = await client.query('SELECT id FROM profiles WHERE id=$1 FOR UPDATE', [req.session.user.id])
+    if (!customerProfile.rows[0]) throw new ApiError(401, 'Please sign in again to continue.')
     const activeOrders = await client.query("SELECT COUNT(*)::int AS count FROM orders WHERE customer_id=$1 AND status IN ('pending','preparing','ready')", [req.session.user.id])
     if (Number(activeOrders.rows[0]?.count || 0) >= 3) throw new ApiError(409, 'You already have 3 active orders. Wait until one is collected or declined before placing another.')
     // Checkout only needs opening hours; contact fields are optional and may not exist on older databases.
@@ -842,7 +843,7 @@ router.post('/orders', requireAuth, orderIpLimiter, orderCustomerLimiter, async 
     throw error
   } finally { client.release() }
 })
-router.post('/orders/:id/collect', requireAuth, pickupPinLimiter, pickupPinOrderLimiter, requireShopkeeper, async (req, res) => {
+router.post('/orders/:id/collect', requireAuth, requireShopkeeper, pickupPinLimiter, pickupPinOrderLimiter, async (req, res) => {
   const pickupPin = String(req.body.pickupPin || '')
   if (!/^\d{4}$/.test(pickupPin)) return res.status(400).json({ error: 'Enter the customer’s 4-digit pickup PIN.' })
   const client = await pool.connect()
