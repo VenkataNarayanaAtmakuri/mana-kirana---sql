@@ -19,6 +19,10 @@ export async function fetchLiveCatalog() {
     storeStatus: data.storeStatus || null,
   }
 }
+export async function checkLiveAvailability(items) {
+  if (!Array.isArray(items) || !items.length || items.length > 50) throw new Error('Choose between 1 and 50 catalogue items to check.')
+  return request('/api/catalog/availability', { method: 'POST', body: JSON.stringify({ items }) })
+}
 export async function fetchCustomerSpendingSummary(period = 'month') {
   if (!['week', 'month'].includes(period)) throw new Error('Choose a valid spending period.')
   return request('/api/customer/spending-summary?period=' + encodeURIComponent(period))
