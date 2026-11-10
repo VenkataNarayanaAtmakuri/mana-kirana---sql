@@ -8,8 +8,9 @@ export async function fetchLiveCatalog() {
     products: data.products.map((row) => ({
       id: row.id, name: row.name, local: row.local || '', category: row.category || 'Other', categoryId: row.category_id,
       price: Number(row.price), unit: row.unit, step: Number(row.step) || 1,
-      // Customer catalogue returns availability only; checkout validates the real stock on the server.
-      stock: row.stock == null ? (row.in_stock === true ? 100 : 0) : Number(row.stock),
+      // Exact inventory is sent only to shopkeepers. Customer quantities are checked by the API at checkout.
+      stock: row.stock == null ? null : Number(row.stock),
+      inStock: row.stock == null ? row.in_stock === true : Number(row.stock) > 0,
       emoji: row.emoji || '🛍️', tint: row.tint || 'new', note: row.note || '',
       expiresOn: row.expires_on || '',
       imageUrl: row.image_updated_at ? API_URL + '/api/products/' + encodeURIComponent(row.id) + '/image?v=' + encodeURIComponent(row.image_updated_at) : '',
@@ -17,6 +18,10 @@ export async function fetchLiveCatalog() {
     offers: (data.offers || []).map((row) => ({ ...row, discountPercent: Number(row.discount_percent), minimumOrder: Number(row.minimum_order) })),
     storeStatus: data.storeStatus || null,
   }
+}
+export async function checkLiveAvailability(items) {
+  if (!Array.isArray(items) || !items.length || items.length > 50) throw new Error('Choose between 1 and 50 catalogue items to check.')
+  return request('/api/catalog/availability', { method: 'POST', body: JSON.stringify({ items }) })
 }
 export async function fetchCustomerSpendingSummary(period = 'month') {
   if (!['week', 'month'].includes(period)) throw new Error('Choose a valid spending period.')
@@ -31,7 +36,7 @@ export async function fetchLiveOrders(scope = 'customer') {
       id: orderLabel(row.order_number), dbId: row.id, name: row.customer_name,
       phone: row.customer_phone || '', pickupPhone: row.pickup_phone || '', channel: row.channel, status: row.status,
       payment: row.payment_method === 'upi_demo' ? 'UPI · demo only' : 'Pay at pickup', total: Number(row.total), subtotal: Number(row.subtotal ?? row.total), discountAmount: Number(row.discount_amount || 0), offerCode: row.offer_code || '', pickupPin: row.pickup_pin || '', createdAt: row.created_at,
-      estimatedReadyAt: row.estimated_ready_at, readyAt, shopkeeperRemoved: Boolean(row.shopkeeper_removed), updatedAt: row.updated_at, sample: false, stockDeducted: true,
+      estimatedReadyAt: row.estimated_ready_at, readyAt, shopkeeperRemoved: Boolean(row.shopkeeper_removed), updatedAt: row.updated_at, sample: false, stockDeducted: Boolean(row.stock_deducted),
       items: (row.items || []).map((item) => ({ id: item.id, productId: item.product_id || item.id, name: item.item_name, emoji: item.emoji || (item.custom_request ? '📝' : '🛍️'), quantity: Number(item.quantity), unit: item.unit, price: item.price == null ? null : Number(item.price), lineTotal: item.line_total == null ? null : Number(item.line_total), custom: item.custom_request, priced: item.price_confirmed })),
     }
   })

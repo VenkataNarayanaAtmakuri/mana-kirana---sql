@@ -50,6 +50,10 @@ For an existing database, apply each migration once, in filename order, before d
 4. `server/sql/migrations/20261109_recovery_codes.sql` — adds hashed, single-use password recovery codes; no SMS or email service is required.
 5. `server/sql/migrations/20261109_store_contact_details.sql` — adds editable public shop contact details.
 6. `server/sql/migrations/20261110_minimum_order_100.sql` — updates the order total constraint to allow the new ₹100 minimum.
+7. `server/sql/migrations/20261110_security_hardening.sql` — creates shared rate-limit/session tables and tracks which orders already deducted stock. Apply before deploying; it preserves the old app’s stock behavior during rollout.
+8. `server/sql/migrations/20261110_finalize_stock_tracking_default.sql` — sets the stock tracking default for the new API. Apply only after the new API is deployed.
+
+Apply migrations 1–7 before deployment, then apply migration 8 after the new API is live.
 
 For a new database, run the current `server/sql/schema.sql` once instead of applying these migrations. Do not run the fresh-database schema against an existing database.
 

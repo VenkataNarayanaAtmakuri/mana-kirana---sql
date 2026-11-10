@@ -14,6 +14,7 @@ import { formatMoney, formatReadyTime, makeSampleOrders, MINIMUM_ORDER_VALUE, or
 import {
   archiveLiveCategory,
   archiveLiveProduct,
+  checkLiveAvailability,
   createLiveCategory,
   createLiveProduct,
   createLiveOffer,
@@ -251,6 +252,7 @@ function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
   const notificationEnabledRef = useRef(false)
+  const availabilitySequence = useRef(new Map())
   const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
 
   useLayoutEffect(() => {
@@ -693,13 +695,37 @@ function App() {
     } catch (error) { setLiveError(error.message); setNotice('Could not download CSV: ' + error.message) }
   }
 
-  function changeQuantity(productId, quantity) {
+  async function changeQuantity(productId, quantity) {
     const product = products.find((item) => item.id === productId)
     if (!product) return
-    if (quantity > product.stock + 0.001) {
+    const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+    const requestVersion = (availabilitySequence.current.get(productId) || 0) + 1
+    availabilitySequence.current.set(productId, requestVersion)
+    if (!stockKnown && quantity > 0.001) {
+      if (product.inStock !== true) {
+        setNotice(product.name + ' is out of stock.')
+        return
+      }
+      if (supabaseConfigured) {
+        try {
+          const result = await checkLiveAvailability([{ productId, quantity }])
+          if (availabilitySequence.current.get(productId) !== requestVersion) return
+          if (!result.items?.[0]?.available) {
+            setNotice(product.name + ' is not available in that quantity. Choose a smaller amount and try again.')
+            return
+          }
+        } catch (error) {
+          if (availabilitySequence.current.get(productId) === requestVersion) {
+            setNotice('Could not check stock. Try again in a moment.')
+          }
+          return
+        }
+      }
+    }
+    if (stockKnown && quantity > Number(product.stock) + 0.001) {
       setNotice('That amount isn’t available. Choose a smaller quantity or try again later.')
       const precision = product.unit === 'kg' ? 100 : 1
-      quantity = Math.floor((product.stock + 0.000001) * precision) / precision
+      quantity = Math.floor((Number(product.stock) + 0.000001) * precision) / precision
     }
     setCart((current) => {
       const next = { ...current }
@@ -710,22 +736,41 @@ function App() {
     setSuccessOrderId('')
   }
 
-  function addSavedItemsToCart(savedItems) {
+  async function addSavedItemsToCart(savedItems) {
+    const originalCart = { ...cart }
     const nextCart = { ...cart }
     let added = 0
     let skipped = 0
+    const availabilityChecks = new Set()
     for (const savedItem of savedItems) {
       const product = products.find((item) => item.id === savedItem.productId)
-      if (!product) { skipped += 1; continue }
+      if (!product || (product.stock == null && product.inStock !== true)) { skipped += 1; continue }
       const requested = Number(savedItem.quantity) || 0
       const alreadyInCart = Number(nextCart[product.id]) || 0
-      const available = Math.max(0, product.stock - alreadyInCart)
+      const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+      const available = stockKnown ? Math.max(0, Number(product.stock) - alreadyInCart) : requested
       const precision = product.unit === 'kg' ? 100 : 1
       const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
       if (quantity <= 0) { skipped += 1; continue }
       nextCart[product.id] = Math.round((alreadyInCart + quantity) * 100) / 100
       added += 1
+      if (!stockKnown && supabaseConfigured) availabilityChecks.add(product.id)
       if (quantity + 0.001 < requested) skipped += 1
+    }
+    if (availabilityChecks.size) {
+      try {
+        const checked = await checkLiveAvailability([...availabilityChecks].map((productId) => ({ productId, quantity: nextCart[productId] })))
+        const unavailable = new Set(checked.items.filter((item) => !item.available).map((item) => item.productId))
+        for (const productId of unavailable) {
+          if (Object.prototype.hasOwnProperty.call(originalCart, productId)) nextCart[productId] = originalCart[productId]
+          else delete nextCart[productId]
+          added = Math.max(0, added - 1)
+          skipped += 1
+        }
+      } catch {
+        setNotice('Could not check stock. Try again in a moment.')
+        return
+      }
     }
     setCart(nextCart)
     selectView('shop')
@@ -733,24 +778,43 @@ function App() {
     setNotice(added ? added + ' saved item' + (added === 1 ? '' : 's') + ' added at today’s prices.' + (skipped ? ' Some unavailable quantities were skipped.' : '') : 'Those saved items are no longer available.')
   }
 
-  function reorderCollectedOrder(order) {
+  async function reorderCollectedOrder(order) {
     if (order.status !== 'collected') return
+    const originalCart = { ...cart }
     const nextCart = { ...cart }
     let added = 0
     let skipped = 0
+    const availabilityChecks = new Set()
     for (const item of order.items || []) {
       if (item.custom || !item.productId) { skipped += 1; continue }
       const product = products.find((entry) => entry.id === item.productId)
-      if (!product) { skipped += 1; continue }
+      if (!product || (product.stock == null && product.inStock !== true)) { skipped += 1; continue }
       const requested = Number(item.quantity) || 0
       const inCart = Number(nextCart[product.id]) || 0
-      const available = Math.max(0, product.stock - inCart)
+      const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+      const available = stockKnown ? Math.max(0, Number(product.stock) - inCart) : requested
       const precision = product.unit === 'kg' ? 100 : 1
       const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
       if (quantity <= 0) { skipped += 1; continue }
       nextCart[product.id] = Math.round((inCart + quantity) * 100) / 100
       added += 1
+      if (!stockKnown && supabaseConfigured) availabilityChecks.add(product.id)
       if (quantity + 0.001 < requested) skipped += 1
+    }
+    if (availabilityChecks.size) {
+      try {
+        const checked = await checkLiveAvailability([...availabilityChecks].map((productId) => ({ productId, quantity: nextCart[productId] })))
+        const unavailable = new Set(checked.items.filter((item) => !item.available).map((item) => item.productId))
+        for (const productId of unavailable) {
+          if (Object.prototype.hasOwnProperty.call(originalCart, productId)) nextCart[productId] = originalCart[productId]
+          else delete nextCart[productId]
+          added = Math.max(0, added - 1)
+          skipped += 1
+        }
+      } catch {
+        setNotice('Could not check stock. Try again in a moment.')
+        return
+      }
     }
     setCart(nextCart)
     selectView('shop')

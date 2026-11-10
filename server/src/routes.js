@@ -1,15 +1,59 @@
 import express, { Router } from 'express'
 import argon2 from 'argon2'
-import { rateLimit } from 'express-rate-limit'
 import { pool } from './db.js'
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 
 const router = Router()
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many authentication attempts. Try again later.' } })
-const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password change attempts. Try again later.' } })
-const recoveryCodeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many recovery code attempts. Try again later.' } })
-const customerRecoveryCodeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many customer recovery code requests. Try again later.' } })
-const recoveryResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many password reset attempts. Try again later.' } })
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+let rateLimitRequestCount = 0
+function createPersistentRateLimiter({ namespace, windowMs, limit, message, keyFor = (req) => req.ip }) {
+  return async (req, res, next) => {
+    try {
+      const subject = String(keyFor(req) || req.ip || 'unknown')
+      const rateKey = namespace + ':' + subject
+      const { rows } = await pool.query(
+        `INSERT INTO api_rate_limits(rate_key,hits,reset_at)
+         VALUES($1,1,now() + $2::bigint * interval '1 millisecond')
+         ON CONFLICT(rate_key) DO UPDATE SET
+           hits=CASE WHEN api_rate_limits.reset_at<=now() THEN 1 ELSE api_rate_limits.hits+1 END,
+           reset_at=CASE WHEN api_rate_limits.reset_at<=now()
+             THEN now() + $2::bigint * interval '1 millisecond'
+             ELSE api_rate_limits.reset_at END
+         RETURNING hits,reset_at`,
+        [rateKey, windowMs],
+      )
+      rateLimitRequestCount += 1
+      if (rateLimitRequestCount % 200 === 0) {
+        await pool.query('DELETE FROM api_rate_limits WHERE reset_at<=now()')
+      }
+      const hits = Number(rows[0].hits)
+      const resetSeconds = Math.max(0, Math.ceil((new Date(rows[0].reset_at).getTime() - Date.now()) / 1000))
+      res.set({
+        'RateLimit-Policy': String(limit) + ';w=' + Math.ceil(windowMs / 1000),
+        'RateLimit-Limit': String(limit),
+        'RateLimit-Remaining': String(Math.max(0, limit - hits)),
+        'RateLimit-Reset': String(resetSeconds),
+      })
+      if (hits > limit) return res.status(429).json({ error: message })
+      return next()
+    } catch (error) {
+      return next(error)
+    }
+  }
+}
+const authLimiter = createPersistentRateLimiter({ namespace: 'auth-ip', windowMs: 15 * 60 * 1000, limit: 12, message: 'Too many authentication attempts. Try again later.' })
+const loginAccountLimiter = createPersistentRateLimiter({ namespace: 'login-phone', windowMs: 15 * 60 * 1000, limit: 8, message: 'Too many authentication attempts for this number. Try again later.', keyFor: (req) => phoneE164(req.body?.phone) || req.ip })
+const passwordChangeLimiter = createPersistentRateLimiter({ namespace: 'password-change', windowMs: 15 * 60 * 1000, limit: 5, message: 'Too many password change attempts. Try again later.' })
+const recoveryCodeLimiter = createPersistentRateLimiter({ namespace: 'recovery-code', windowMs: 60 * 60 * 1000, limit: 5, message: 'Too many recovery code attempts. Try again later.' })
+const customerRecoveryCodeLimiter = createPersistentRateLimiter({ namespace: 'customer-recovery-code', windowMs: 60 * 60 * 1000, limit: 10, message: 'Too many customer recovery code requests. Try again later.' })
+const recoveryResetLimiter = createPersistentRateLimiter({ namespace: 'recovery-reset-ip', windowMs: 15 * 60 * 1000, limit: 8, message: 'Too many password reset attempts. Try again later.' })
+const recoveryResetAccountLimiter = createPersistentRateLimiter({ namespace: 'recovery-reset-phone', windowMs: 15 * 60 * 1000, limit: 5, message: 'Too many password reset attempts for this number. Try again later.', keyFor: (req) => phoneE164(req.body?.phone) || req.ip })
 const RECOVERY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 function createRecoveryCode() {
   const compact = Array.from(randomBytes(20), (byte) => RECOVERY_CODE_ALPHABET[byte & 31]).join('')
@@ -28,10 +72,14 @@ function matchesRecoveryCode(storedHash, code) {
   return stored.length === provided.length && timingSafeEqual(stored, provided)
 }
 const RECOVERY_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{20}$/
-const accountLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many account-link attempts. Try again later.' } })
-const profileUpdateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile update attempts. Try again later.' } })
-const pickupPinLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many pickup PIN attempts. Try again later.' } })
-const offerValidationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many offer checks. Try again later.' } })
+const accountLinkLimiter = createPersistentRateLimiter({ namespace: 'account-link', windowMs: 15 * 60 * 1000, limit: 5, message: 'Too many account-link attempts. Try again later.' })
+const profileUpdateLimiter = createPersistentRateLimiter({ namespace: 'profile-update', windowMs: 15 * 60 * 1000, limit: 10, message: 'Too many profile update attempts. Try again later.' })
+const pickupPinLimiter = createPersistentRateLimiter({ namespace: 'pickup-pin-ip', windowMs: 15 * 60 * 1000, limit: 20, message: 'Too many pickup PIN attempts. Try again later.' })
+const pickupPinOrderLimiter = createPersistentRateLimiter({ namespace: 'pickup-pin-order', windowMs: 60 * 60 * 1000, limit: 8, message: 'Too many pickup PIN attempts for this order. Try again later.', keyFor: (req) => (req.session.user?.id || 'unknown') + ':' + req.params.id })
+const offerValidationLimiter = createPersistentRateLimiter({ namespace: 'offer-validation', windowMs: 15 * 60 * 1000, limit: 30, message: 'Too many offer checks. Try again later.' })
+const orderIpLimiter = createPersistentRateLimiter({ namespace: 'order-ip', windowMs: 60 * 60 * 1000, limit: 30, message: 'Too many orders from this network. Try again later.' })
+const orderCustomerLimiter = createPersistentRateLimiter({ namespace: 'order-customer', windowMs: 60 * 60 * 1000, limit: 10, message: 'Too many orders from this account. Try again later.', keyFor: (req) => req.session.user?.id || req.ip })
+const availabilityLimiter = createPersistentRateLimiter({ namespace: 'catalog-availability', windowMs: 15 * 60 * 1000, limit: 120, message: 'Too many availability checks. Try again later.' })
 const phoneE164 = (input) => {
   const digits = String(input || '').replace(/\D/g, '')
   if (digits.length === 10 && /^[6-9]/.test(digits)) return '+91' + digits
@@ -165,7 +213,7 @@ router.post('/auth/register', authLimiter, async (req, res) => {
     throw error
   }
 })
-router.post('/auth/login', authLimiter, async (req, res) => {
+router.post('/auth/login', authLimiter, loginAccountLimiter, async (req, res) => {
   const phone = phoneE164(req.body.phone)
   const password = String(req.body.password || '')
   const expectedRole = String(req.body.expectedRole || 'customer')
@@ -211,7 +259,7 @@ router.post('/auth/recovery-code/customer', customerRecoveryCodeLimiter, require
   await pool.query('UPDATE profiles SET recovery_code_hash=$1 WHERE id=$2', [hashRecoveryCode(recoveryCode), customerRows[0].id])
   res.json({ recoveryCode })
 })
-router.post('/auth/reset-password', recoveryResetLimiter, async (req, res) => {
+router.post('/auth/reset-password', recoveryResetLimiter, recoveryResetAccountLimiter, async (req, res) => {
   const phone = phoneE164(req.body.phone)
   const recoveryCode = normalizeRecoveryCode(req.body.recoveryCode)
   const newPassword = String(req.body.newPassword || '')
@@ -302,7 +350,27 @@ router.post('/auth/change-password', passwordChangeLimiter, requireAuth, async (
   if (reusesCurrentPassword) return res.status(400).json({ error: 'Choose a new password different from your current one.' })
 
   const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id })
-  await pool.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, req.session.user.id])
+  const signedInUser = req.session.user
+  const linkedAccount = req.session.linkedAccount || null
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('UPDATE profiles SET password_hash=$1 WHERE id=$2', [passwordHash, signedInUser.id])
+    await client.query(
+      "DELETE FROM user_sessions WHERE sess->'user'->>'id'=$1 OR sess->'linkedAccount'->>'id'=$1",
+      [signedInUser.id],
+    )
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+  await regenerateSession(req)
+  req.session.user = signedInUser
+  if (linkedAccount) req.session.linkedAccount = linkedAccount
+  await saveSession(req)
   res.json({ ok: true })
 })
 router.get('/auth/me', (req, res) => res.json({ user: req.session.user || null, linkedAccount: req.session.user ? req.session.linkedAccount || null : null }))
@@ -359,6 +427,33 @@ router.get('/catalog', async (req, res) => {
     ? products.rows
     : products.rows.map(({ stock, ...product }) => ({ ...product, in_stock: Number(stock) > 0 }))
   res.json({ categories: categories.rows, products: publicProducts, offers: offers.rows, storeStatus })
+})
+router.post('/catalog/availability', availabilityLimiter, async (req, res) => {
+  const requestedItems = req.body?.items
+  if (!Array.isArray(requestedItems) || requestedItems.length < 1 || requestedItems.length > 50) {
+    return res.status(400).json({ error: 'Choose between 1 and 50 catalogue items to check.' })
+  }
+  const requested = new Map()
+  for (const item of requestedItems) {
+    const productId = String(item?.productId || '').toLowerCase()
+    const quantity = Number(item?.quantity)
+    if (!PRODUCT_ID_PATTERN.test(productId) || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000) {
+      return res.status(400).json({ error: 'A product or quantity is invalid.' })
+    }
+    requested.set(productId, (requested.get(productId) || 0) + quantity)
+  }
+  const productIds = [...requested.keys()]
+  const { rows } = await pool.query(
+    "SELECT id,stock FROM products WHERE id=ANY($1::uuid[]) AND active=true AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date)",
+    [productIds],
+  )
+  const stockById = new Map(rows.map((row) => [row.id, Number(row.stock)]))
+  res.json({
+    items: productIds.map((productId) => ({
+      productId,
+      available: stockById.has(productId) && stockById.get(productId) >= requested.get(productId),
+    })),
+  })
 })
 router.get('/products/:id/image', async (req, res) => {
   if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product image not found.' })
@@ -659,7 +754,7 @@ router.delete('/orders/:id', requireAuth, async (req, res) => {
     client.release()
   }
 })
-router.post('/orders', requireAuth, async (req, res) => {
+router.post('/orders', requireAuth, orderIpLimiter, orderCustomerLimiter, async (req, res) => {
   const { name, phone: rawPhone, pickupPhone: rawPickupPhone, channel, items } = req.body
   const offerCode = String(req.body.offerCode || '').trim().toUpperCase()
   const acceptedPriceChanges = new Map()
@@ -678,20 +773,24 @@ router.post('/orders', requireAuth, async (req, res) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    const customerProfile = await client.query('SELECT id FROM profiles WHERE id=$1 FOR UPDATE', [req.session.user.id])
+    if (!customerProfile.rows[0]) throw new ApiError(401, 'Please sign in again to continue.')
+    const activeOrders = await client.query("SELECT COUNT(*)::int AS count FROM orders WHERE customer_id=$1 AND status IN ('pending','preparing','ready')", [req.session.user.id])
+    if (Number(activeOrders.rows[0]?.count || 0) >= 3) throw new ApiError(409, 'You already have 3 active orders. Wait until one is collected or declined before placing another.')
     // Checkout only needs opening hours; contact fields are optional and may not exist on older databases.
     const storeStatus = await readStoreStatus(client, { includeContact: false })
-    if (!storeStatus.acceptingOrders) throw new Error(storeStatus.message || 'The shop is closed right now.')
+    if (!storeStatus.acceptingOrders) throw new ApiError(409, storeStatus.message || 'The shop is closed right now.')
     let subtotal = 0, hasCustom = false
     const normalized = []
     const priceChanges = []
     for (const item of items) {
       const qty = Number(item.quantity)
-      if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) throw new Error('Invalid item quantity.')
+      if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) throw new ApiError(400, 'Invalid item quantity.')
       if (item.custom) { hasCustom = true; normalized.push({ ...item, quantity: qty, price: null, line_total: null }); continue }
       const product = await client.query("SELECT id,name,price,stock,unit,emoji FROM products WHERE id=$1 AND active=true AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date) FOR UPDATE", [item.product_id])
-      if (!product.rows[0]) throw new Error('A selected product is no longer available.')
+      if (!product.rows[0]) throw new ApiError(409, 'A selected product is no longer available.')
       const p = product.rows[0]
-      if (Number(p.stock) < qty) throw new Error(`${p.name} isn’t available in that quantity. Reduce the amount and try again.`)
+      if (Number(p.stock) < qty) throw new ApiError(409, p.name + ' isn’t available in that quantity. Reduce the amount and try again.')
       const currentPrice = roundMoney(Number(p.price))
       const submittedPrice = Number(item.price)
       if ((!Number.isFinite(submittedPrice) || roundMoney(submittedPrice) !== currentPrice)
@@ -713,33 +812,38 @@ router.post('/orders', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'Catalogue prices changed. Review the current prices before placing the order.', priceChanges })
     }
     subtotal = roundMoney(subtotal)
-    if (subtotal < 100) throw new Error('The confirmed item subtotal must be at least ₹100.')
+    if (subtotal < 100) throw new ApiError(400, 'The confirmed item subtotal must be at least ₹100.')
     let discountAmount = 0
     let appliedOffer = null
     if (offerCode) {
       appliedOffer = await findActiveOffer(client, offerCode)
-      if (!appliedOffer) throw new Error('This offer code is invalid, expired, or inactive.')
-      if (subtotal < Number(appliedOffer.minimum_order)) throw new Error('This offer requires a confirmed subtotal of at least ₹' + Number(appliedOffer.minimum_order).toFixed(0) + '.')
+      if (!appliedOffer) throw new ApiError(400, 'This offer code is invalid, expired, or inactive.')
+      if (subtotal < Number(appliedOffer.minimum_order)) throw new ApiError(400, 'This offer requires a confirmed subtotal of at least ₹' + Number(appliedOffer.minimum_order).toFixed(0) + '.')
       discountAmount = roundMoney(subtotal * Number(appliedOffer.discount_percent) / 100)
     }
     const total = roundMoney(subtotal - discountAmount)
-    if (total < 100) throw new Error('The order total after discount must be at least ₹100.')
+    if (total < 100) throw new ApiError(400, 'The order total after discount must be at least ₹100.')
+    // Serialize queue-slot allocation so concurrent orders cannot receive the same 15-minute slot.
+    await client.query('SELECT pg_advisory_xact_lock(773041, 1)')
     const queue = await client.query("SELECT COALESCE(MAX(estimated_ready_at),now()) AS latest FROM orders WHERE status IN ('pending','preparing')")
     const count = await client.query("SELECT count(*)::int AS n FROM orders WHERE status IN ('pending','preparing') AND estimated_ready_at IS NULL")
     const latest = new Date(queue.rows[0].latest).getTime()
     const ready = new Date(Math.max(Date.now() + (count.rows[0].n + 1) * 15 * 60000, latest + 15 * 60000))
     const pickupPin = String(randomInt(0, 10000)).padStart(4, '0')
-    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
+    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at,stock_deducted) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString(), false])
     for (const item of normalized) {
-      if (!item.custom) await client.query('UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
     }
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [req.session.user.id, order.rows[0].id, `Order MK-${String(order.rows[0].order_number).padStart(6,'0')} received.`])
     await client.query('COMMIT')
     res.status(201).json(order.rows[0])
-  } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message || 'Could not place order.' }) } finally { client.release() }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error instanceof ApiError) return res.status(error.status).json({ error: error.message })
+    throw error
+  } finally { client.release() }
 })
-router.post('/orders/:id/collect', pickupPinLimiter, requireAuth, requireShopkeeper, async (req, res) => {
+router.post('/orders/:id/collect', requireAuth, requireShopkeeper, pickupPinLimiter, pickupPinOrderLimiter, async (req, res) => {
   const pickupPin = String(req.body.pickupPin || '')
   if (!/^\d{4}$/.test(pickupPin)) return res.status(400).json({ error: 'Enter the customer’s 4-digit pickup PIN.' })
   const client = await pool.connect()
@@ -748,13 +852,17 @@ router.post('/orders/:id/collect', pickupPinLimiter, requireAuth, requireShopkee
     const { rows } = await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE', [req.params.id])
     const order = rows[0]
     if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found.' }) }
-    if (order.status !== 'ready') throw new Error('Only ready orders can be collected.')
-    if (order.pickup_pin !== pickupPin) throw new Error('That 4-digit pickup PIN does not match.')
+    if (order.status !== 'ready') throw new ApiError(409, 'Only ready orders can be collected.')
+    if (order.pickup_pin !== pickupPin) throw new ApiError(400, 'That 4-digit pickup PIN does not match.')
     await client.query("UPDATE orders SET status='collected',updated_at=now() WHERE id=$1", [order.id])
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [order.customer_id, order.id, 'Your order has been collected. Thank you!'])
     await client.query('COMMIT')
     res.json({ id: order.id, status: 'collected' })
-  } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error instanceof ApiError) return res.status(error.status).json({ error: error.message })
+    throw error
+  } finally { client.release() }
 })
 router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, res) => {
   const next = String(req.body.status || '')
@@ -765,17 +873,41 @@ router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, r
     const order = rows[0]
     if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found.' }) }
     const allowed = { pending: ['preparing','rejected'], preparing: ['ready'], ready: [] }
-    if (next === 'collected') throw new Error('Verify the customer’s 4-digit pickup PIN to complete collection.')
-    if (!(allowed[order.status] || []).includes(next)) throw new Error('Invalid order status transition.')
-    if (next === 'rejected') {
-      const items = await client.query('SELECT product_id,quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL', [order.id])
+    if (next === 'collected') throw new ApiError(400, 'Verify the customer’s 4-digit pickup PIN to complete collection.')
+    if (!(allowed[order.status] || []).includes(next)) throw new ApiError(400, 'Invalid order status transition.')
+    if (next === 'preparing' && !order.stock_deducted) {
+      const items = await client.query(
+        'SELECT product_id,SUM(quantity)::numeric AS quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL GROUP BY product_id ORDER BY product_id',
+        [order.id],
+      )
+      for (const item of items.rows) {
+        const reserved = await client.query(
+          "UPDATE products SET stock=stock-$1,updated_at=now() WHERE id=$2 AND active=true AND stock >= $1 AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date) RETURNING id",
+          [item.quantity, item.product_id],
+        )
+        if (!reserved.rows[0]) throw new ApiError(409, 'An item in this order no longer has enough stock. Review the order and decline it if needed.')
+      }
+      await client.query('UPDATE orders SET stock_deducted=true WHERE id=$1', [order.id])
+    }
+    if (next === 'rejected' && order.stock_deducted) {
+      const items = await client.query(
+        'SELECT product_id,SUM(quantity)::numeric AS quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL GROUP BY product_id',
+        [order.id],
+      )
       for (const item of items.rows) await client.query('UPDATE products SET stock=stock+$1,updated_at=now() WHERE id=$2', [item.quantity, item.product_id])
     }
-    await client.query('UPDATE orders SET status=$1,updated_at=now() WHERE id=$2', [next, order.id])
+    await client.query(
+      "UPDATE orders SET status=$1,updated_at=now(),stock_deducted=CASE WHEN $1='rejected' THEN false ELSE stock_deducted END WHERE id=$2",
+      [next, order.id],
+    )
     const body = next === 'preparing' ? 'Your order is being prepared.' : next === 'ready' ? 'Your order is ready for pickup. Your 4-digit pickup PIN is ' + order.pickup_pin + '. Show it to the shopkeeper when collecting.' : next === 'collected' ? 'Your order has been collected. Thank you!' : 'Your order was declined. Please contact the shop.'
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [order.customer_id, order.id, body])
     await client.query('COMMIT'); res.json({ id: order.id, status: next })
-  } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error instanceof ApiError) return res.status(error.status).json({ error: error.message })
+    throw error
+  } finally { client.release() }
 })
 router.patch('/order-items/:id/price', requireAuth, requireShopkeeper, async (req, res) => {
   const rate = Number(req.body.rate)
@@ -785,13 +917,17 @@ router.patch('/order-items/:id/price', requireAuth, requireShopkeeper, async (re
     await client.query('BEGIN')
     const found = await client.query('SELECT i.*,o.id AS oid,o.customer_id,o.status FROM order_items i JOIN orders o ON o.id=i.order_id WHERE i.id=$1 FOR UPDATE OF i,o', [req.params.id])
     const item = found.rows[0]
-    if (!item || !item.custom_request || item.price_confirmed || ['rejected','collected'].includes(item.status)) throw new Error('This requested item cannot be priced.')
+    if (!item || !item.custom_request || item.price_confirmed || ['rejected','collected'].includes(item.status)) throw new ApiError(409, 'This requested item cannot be priced.')
     const line = Math.round(rate * Number(item.quantity) * 100) / 100
     await client.query('UPDATE order_items SET price=$1,line_total=$2,price_confirmed=true WHERE id=$3', [rate,line,item.id])
     await client.query('UPDATE orders SET subtotal=(SELECT COALESCE(SUM(line_total),0) FROM order_items WHERE order_id=$1),total=(SELECT COALESCE(SUM(line_total),0) FROM order_items WHERE order_id=$1)-discount_amount,updated_at=now() WHERE id=$1', [item.oid])
     await client.query('INSERT INTO customer_messages(customer_id,order_id,body) VALUES($1,$2,$3)', [item.customer_id,item.oid,`Price confirmed for ${item.item_name}: ₹${rate.toFixed(2)} per ${item.unit}.`])
     await client.query('COMMIT'); res.json({ id: item.id, price: rate, line_total: line })
-  } catch (error) { await client.query('ROLLBACK'); res.status(400).json({ error: error.message }) } finally { client.release() }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    if (error instanceof ApiError) return res.status(error.status).json({ error: error.message })
+    throw error
+  } finally { client.release() }
 })
 router.get('/messages', requireAuth, async (req, res) => {
   const { rows } = await pool.query(`
