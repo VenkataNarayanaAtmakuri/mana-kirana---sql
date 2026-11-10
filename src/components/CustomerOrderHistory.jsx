@@ -114,7 +114,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                   <strong>{formatMoney(order.total)}</strong>
                 </div>
                 {order.status === 'ready' && order.shopkeeperRemoved && <p className="customer-order-expiry-note">The shopkeeper removed this uncollected order from their active list after 24 hours. You can now remove it from your history.</p>}
-                {(order.status === 'collected' || (order.status === 'ready' && order.shopkeeperRemoved)) && (
+                {(order.status === 'collected' || order.status === 'rejected' || (order.status === 'ready' && order.shopkeeperRemoved)) && (
                   <div className="customer-order-actions">
                     {order.status === 'collected' && (
                       <button className="customer-order-reorder" type="button" onClick={() => onReorderOrder(order)} aria-label={'Reorder ' + order.id}>
@@ -122,7 +122,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
                       </button>
                     )}
                     <button className="customer-order-delete" type="button" onClick={() => onDeleteOrder(order.id)} disabled={deletingOrderId === order.id} aria-label={'Remove order ' + order.id + ' from customer history'}>
-                      <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : 'Remove from my history'}
+                      <Trash2 size={15} />{deletingOrderId === order.id ? 'Deleting…' : order.status === 'rejected' ? 'Remove declined order' : 'Remove from my history'}
                     </button>
                   </div>
                 )}
@@ -157,7 +157,7 @@ export default function CustomerOrderHistory({ orders, onDeleteOrder, deletingOr
       ) : (
         <p className="customer-order-empty">Orders you place will appear here.</p>
       )}
-      <p className="customer-order-note">You can remove collected orders from your history. If a Ready order is uncollected for 24 hours and the shopkeeper removes it from their active list, you can remove it too. Removing an order from your history does not erase its stored details.</p>
+      <p className="customer-order-note">You can remove declined or collected orders from your history. If a Ready order is uncollected for 24 hours and the shopkeeper removes it from their active list, you can remove it too. Removing an order from your history does not erase its stored details.</p>
     </section>
   )
 }
