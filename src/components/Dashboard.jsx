@@ -246,7 +246,7 @@ const STARTER_GROCERIES = [
   { name: 'Tea Powder (250 g pack)', local: 'టీ పొడి', category: 'Packaged', unit: 'pack' },
 ]
 
-function AddProductForm({ categories, products = [], onAddProduct, voiceLanguage }) {
+function AddProductForm({ categories, products = [], onAddProduct }) {
   const [name, setName] = useState('')
   const [local, setLocal] = useState('')
   const [category, setCategory] = useState(categories[0] || '')
@@ -294,7 +294,7 @@ function AddProductForm({ categories, products = [], onAddProduct, voiceLanguage
 
   return (
     <form className="add-product-form" onSubmit={submit}>
-      <div className="add-product-heading"><div><h3>Add a catalogue item</h3><p>Type or speak the English and Telugu names, then enter the rate and stock.</p></div><span className="add-product-icon"><Plus size={18} /></span></div>
+      <div className="add-product-heading"><div><h3>Add a catalogue item</h3><p>Speak the item name in English and the optional local name in Telugu.</p></div><span className="add-product-icon"><Plus size={18} /></span></div>
       <div className="starter-grocery-panel">
         <strong>Quick-add common groceries</strong>
         <p>Choose a starter, then enter your current local rate and stock before saving.</p>
@@ -305,8 +305,8 @@ function AddProductForm({ categories, products = [], onAddProduct, voiceLanguage
         })).map((item) => <button type="button" key={item.name} onClick={() => chooseStarter(item)}>{item.name} <span lang="te">{item.local}</span></button>)}</div>
       </div>
       <div className="add-product-fields">
-        <label className="catalogue-voice-field"><span>Item name</span><div className="inventory-voice-entry"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Moong dal" required /><VoiceDictationButton language={voiceLanguage} onTranscript={setName} label="Speak" /></div></label>
-        <label className="catalogue-voice-field"><span>Telugu name <small>optional</small></span><div className="inventory-voice-entry"><input value={local} onChange={(event) => setLocal(event.target.value)} placeholder="స్థానిక పేరు" /><VoiceDictationButton language={voiceLanguage} onTranscript={setLocal} label="Speak" /></div></label>
+        <label className="catalogue-voice-field"><span>Item name <small>English</small></span><div className="inventory-voice-entry"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Moong dal" required /><VoiceDictationButton language="en-IN" onTranscript={setName} label="Speak English" /></div></label>
+        <label className="catalogue-voice-field"><span>Telugu name <small>optional</small></span><div className="inventory-voice-entry"><input value={local} onChange={(event) => setLocal(event.target.value)} placeholder="స్థానిక పేరు" /><VoiceDictationButton language="te-IN" onTranscript={setLocal} label="తెలుగు" /></div></label>
         <label><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)} required><option value="" disabled>Choose a category</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label><span>Sold as</span><select value={unit} onChange={(event) => setUnit(event.target.value)}><option value="kg">Loose · kg</option><option value="pack">Pack</option><option value="dozen">Dozen</option><option value="500 g">500 g pack</option><option value="500 ml">500 ml pack</option><option value="200 g">200 g pack</option><option value="100 g">100 g pack</option></select></label>
         <label><span>Rate · ₹ / {unit}</span><input type="number" min="1" step="1" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="0" required /></label>
@@ -622,7 +622,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
   const [filter, setFilter] = useState('all')
   const [section, setSection] = useState('orders')
   const [inventorySearch, setInventorySearch] = useState('')
-  const [voiceLanguage, setVoiceLanguage] = useState('te-IN')
+  const [voiceLanguage, setVoiceLanguage] = useState('en-IN')
   const visibleOrders = useMemo(() => {
     const sorted = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     if (filter === 'all') return sorted
@@ -696,7 +696,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
           <label><span>Voice language</span><select value={voiceLanguage} onChange={(event) => setVoiceLanguage(event.target.value)} aria-label="Voice search language"><option value="te-IN">తెలుగు</option><option value="en-IN">English</option></select></label>
           <VoiceDictationButton language={voiceLanguage} onTranscript={setInventorySearch} label="Voice search" />
         </div>
-        <AddProductForm categories={categories} products={products} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
+        <AddProductForm categories={categories} products={products} onAddProduct={onAddProduct} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
           <div className="inventory-list-heading"><strong>Catalogue</strong><span>{inventorySearch.trim() ? visibleProducts.length + ' of ' + products.length + ' items' : products.length + ' items'} · quantity is measured in each item’s selling unit</span></div>
           {visibleProducts.length ? visibleProducts.map((product) => <InventoryRow key={product.id} product={product} onSave={onSaveProduct} onRemove={onRemoveProduct} onUploadImage={onUploadProductImage} onRemoveImage={onRemoveProductImage} />) : <p className="inventory-no-results">{products.length ? 'No catalogue items match that search.' : 'No catalogue items yet. Add an item above.'}</p>}

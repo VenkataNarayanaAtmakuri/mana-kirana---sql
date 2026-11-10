@@ -216,7 +216,7 @@ function App() {
   const [channel, setChannel] = useState(getInitialChannel)
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
-  const [voiceSearchLanguage, setVoiceSearchLanguage] = useState('te-IN')
+  const [voiceSearchLanguage, setVoiceSearchLanguage] = useState('en-IN')
   const {
     listening: voiceSearchActive,
     message: voiceSearchMessage,

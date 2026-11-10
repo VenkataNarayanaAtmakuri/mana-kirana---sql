@@ -98,18 +98,18 @@ export function useVoiceRecognition({ language = 'en-IN', onTranscript }) {
           .join(' ')
           .replace(/\s+/g, ' ')
           .trim()
+        callbackRef.current?.(transcriptRef.current)
       }
 
-      const transcript = [transcriptRef.current, interimText]
-        .filter(Boolean)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      if (!transcript) return
-      callbackRef.current?.(transcript)
-      if (shouldListenRef.current) {
-        reconnectMessageRef.current = ''
-        setMessage('Heard: ' + transcript)
+      if (!shouldListenRef.current) {
+        if (finalText) setMessage('Recognized words are saved. Check spelling before adding the item.')
+        return
+      }
+      reconnectMessageRef.current = ''
+      if (interimText) {
+        setMessage('Hearing: ' + interimText.trim() + ' · pause briefly to confirm the words.')
+      } else if (finalText) {
+        setMessage('Recognized: ' + finalText.trim() + ' · check spelling before saving.')
       }
     }
     recognition.onerror = (event) => {
@@ -163,7 +163,7 @@ export function useVoiceRecognition({ language = 'en-IN', onTranscript }) {
       restartTimerRef.current = null
     }
     setListening(false)
-    setMessage(transcriptRef.current ? 'Stopped listening. Your dictated words are saved.' : 'Stopped listening.')
+    setMessage(transcriptRef.current ? 'Recognized words are saved. Check spelling before adding the item.' : 'No complete words were confirmed. Speak a short phrase, pause, then stop.')
     try {
       recognition?.stop()
     } catch {
