@@ -696,10 +696,15 @@ function App() {
   function changeQuantity(productId, quantity) {
     const product = products.find((item) => item.id === productId)
     if (!product) return
-    if (quantity > product.stock + 0.001) {
+    const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+    if (!stockKnown && product.inStock !== true && quantity > 0.001) {
+      setNotice(product.name + ' is out of stock.')
+      return
+    }
+    if (stockKnown && quantity > Number(product.stock) + 0.001) {
       setNotice('That amount isn’t available. Choose a smaller quantity or try again later.')
       const precision = product.unit === 'kg' ? 100 : 1
-      quantity = Math.floor((product.stock + 0.000001) * precision) / precision
+      quantity = Math.floor((Number(product.stock) + 0.000001) * precision) / precision
     }
     setCart((current) => {
       const next = { ...current }
@@ -716,10 +721,11 @@ function App() {
     let skipped = 0
     for (const savedItem of savedItems) {
       const product = products.find((item) => item.id === savedItem.productId)
-      if (!product) { skipped += 1; continue }
+      if (!product || (product.stock == null && product.inStock !== true)) { skipped += 1; continue }
       const requested = Number(savedItem.quantity) || 0
       const alreadyInCart = Number(nextCart[product.id]) || 0
-      const available = Math.max(0, product.stock - alreadyInCart)
+      const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+      const available = stockKnown ? Math.max(0, Number(product.stock) - alreadyInCart) : requested
       const precision = product.unit === 'kg' ? 100 : 1
       const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
       if (quantity <= 0) { skipped += 1; continue }
@@ -741,10 +747,11 @@ function App() {
     for (const item of order.items || []) {
       if (item.custom || !item.productId) { skipped += 1; continue }
       const product = products.find((entry) => entry.id === item.productId)
-      if (!product) { skipped += 1; continue }
+      if (!product || (product.stock == null && product.inStock !== true)) { skipped += 1; continue }
       const requested = Number(item.quantity) || 0
       const inCart = Number(nextCart[product.id]) || 0
-      const available = Math.max(0, product.stock - inCart)
+      const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+      const available = stockKnown ? Math.max(0, Number(product.stock) - inCart) : requested
       const precision = product.unit === 'kg' ? 100 : 1
       const quantity = Math.floor((Math.min(requested, available) + 0.000001) * precision) / precision
       if (quantity <= 0) { skipped += 1; continue }
