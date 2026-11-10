@@ -27,8 +27,6 @@ export default function CartPanel({
   accountPhone = '',
   alternatePickupPhone = '',
   onAlternatePickupPhoneChange,
-  payment,
-  onPaymentChange,
   onSubmit,
   channelLabel,
   successOrderId,
@@ -118,7 +116,7 @@ export default function CartPanel({
             <p>{customItems.length ? 'Unlisted item prices are not included; settle the confirmed rate at the shop desk.' : 'Final weight of loose items may vary slightly at the store.'}</p>
           </div>
           {coupon && total < coupon.minimumOrder && <p className="minimum-order-warning" role="status">Add items to reach this offer’s ₹{formatMoney(coupon.minimumOrder)} minimum basket.</p>}
-          {discountedTotal <= minimumOrderValue && <p className="minimum-order-warning" role="status">Add priced items to keep the order above ₹{minimumOrderValue}. Unpriced requests do not count.</p>}
+          {discountedTotal < minimumOrderValue && <p className="minimum-order-warning" role="status">Add priced items to reach the ₹{minimumOrderValue} minimum. Unpriced requests do not count.</p>}
           <form className="checkout-form" onSubmit={onSubmit}>
             <label className="field-label" htmlFor="customer-name">Name for pickup</label>
             <input id="customer-name" autoComplete="name" value={customerName} onChange={(event) => onNameChange(event.target.value)} placeholder="e.g. Ananya Reddy" required />
@@ -142,23 +140,11 @@ export default function CartPanel({
               <input id="alternate-pickup-phone" type="tel" inputMode="numeric" autoComplete="off" value={alternatePickupPhone} onChange={(event) => onAlternatePickupPhoneChange(event.target.value)} placeholder="10-digit number" pattern="[6-9][0-9]{9}" maxLength={10} title="Enter a valid 10-digit Indian mobile number" aria-describedby="alternate-pickup-hint" />
             </div>
             <p className="checkout-phone-hint" id="alternate-pickup-hint">Add this if someone else may collect the order. The shopkeeper can see both numbers.</p>
-            <fieldset className="payment-options">
-              <legend className="field-label">Payment <span>demo only</span></legend>
-              <label className={`payment-option ${payment === 'pickup' ? 'selected' : ''}`}>
-                <input type="radio" name="payment" value="pickup" checked={payment === 'pickup'} onChange={() => onPaymentChange('pickup')} />
-                <span><strong>Pay at the shop</strong><small>Cash or UPI at pickup</small></span>
-              </label>
-              {customItems.length === 0 && <label className={`payment-option ${payment === 'upi' ? 'selected' : ''}`}>
-                <input type="radio" name="payment" value="upi" checked={payment === 'upi'} onChange={() => onPaymentChange('upi')} />
-                <span><strong>UPI payment</strong><small>No money is charged</small></span>
-                <span className="demo-chip">DEMO</span>
-              </label>}
-            </fieldset>
             {!storeAcceptingOrders && <p className="store-closed-checkout" role="status">{storeStatus?.message || 'The shop is not accepting orders right now.'}</p>}
-            <button className="place-order-button" type="submit" disabled={discountedTotal <= minimumOrderValue || !storeAcceptingOrders || (coupon && total < coupon.minimumOrder)}>
-              {!storeAcceptingOrders ? 'Ordering is paused' : discountedTotal <= minimumOrderValue ? <>Minimum is above ₹{minimumOrderValue}</> : customItems.length ? <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)} confirmed + price pending</span></> : <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)}</span></>}
+            <button className="place-order-button" type="submit" disabled={discountedTotal < minimumOrderValue || !storeAcceptingOrders || (coupon && total < coupon.minimumOrder)}>
+              {!storeAcceptingOrders ? 'Ordering is paused' : discountedTotal < minimumOrderValue ? <>Minimum is ₹{minimumOrderValue}</> : customItems.length ? <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)} confirmed + price pending</span></> : <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)}</span></>}
             </button>
-            <p className="payment-footnote">{customItems.length ? 'Any requested-item amount is settled at the shop desk after its rate is confirmed.' : 'Demo payment only — no real payment is processed.'}</p>
+            <p className="payment-footnote">{customItems.length ? 'The shopkeeper will confirm requested-item prices. Pay at the shop when collecting your groceries (cash or UPI).' : liveMode ? 'Pay at the shop when collecting your groceries (cash or UPI).' : 'Demo orders do not process payments. Live orders are paid for at the shop when collected.'}</p>
           </form>
         </>
       )}
