@@ -1125,15 +1125,18 @@ function App() {
     const customerReleasedOrder = actorRole === 'customer'
       && existingOrder?.status === 'ready'
       && existingOrder?.shopkeeperRemoved
-    const canDelete = existingOrder?.status === 'collected' || shopkeeperReadyExpired || customerReleasedOrder
+    const declinedOrder = existingOrder?.status === 'rejected'
+    const canDelete = declinedOrder || existingOrder?.status === 'collected' || shopkeeperReadyExpired || customerReleasedOrder
     if (!existingOrder || !canDelete || deletingOrderId || !['customer', 'shopkeeper'].includes(actorRole)) return
 
     const otherSide = actorRole === 'customer' ? 'shopkeeper' : 'customer'
-    const confirmation = shopkeeperReadyExpired
-      ? 'Remove uncollected order ' + id + ' from the shopkeeper admin list? It has been ready for over 24 hours. The customer can then remove it from their own history. The order record and item details remain stored.'
-      : customerReleasedOrder
-        ? 'Remove order ' + id + ' from your customer history? The shopkeeper has already removed it from their active list. The order record remains stored.'
-        : 'Remove collected order ' + id + ' from your ' + actorRole + ' history? It will remain visible in the ' + otherSide + ' history. The order and its item details will not be deleted.'
+    const confirmation = declinedOrder
+      ? 'Remove declined order ' + id + ' from your ' + actorRole + ' history? It will remain visible in the ' + otherSide + ' history. The order and its item details will not be deleted.'
+      : shopkeeperReadyExpired
+        ? 'Remove uncollected order ' + id + ' from the shopkeeper admin list? It has been ready for over 24 hours. The customer can then remove it from their own history. The order record and item details remain stored.'
+        : customerReleasedOrder
+          ? 'Remove order ' + id + ' from your customer history? The shopkeeper has already removed it from their active list. The order record remains stored.'
+          : 'Remove collected order ' + id + ' from your ' + actorRole + ' history? It will remain visible in the ' + otherSide + ' history. The order and its item details will not be deleted.'
     if (!window.confirm(confirmation)) return
 
     setDeletingOrderId(id)
