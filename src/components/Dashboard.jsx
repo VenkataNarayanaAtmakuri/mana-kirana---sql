@@ -1,7 +1,8 @@
 import { ArrowDownToLine, Check, CheckCircle2, Clock3, ClipboardList, Mic, MicOff, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import OrderNotificationControl from './OrderNotificationControl.jsx'
 import { formatMoney, formatQuantity, formatReadyTime, orderChannelLabel } from '../data.js'
+import { useVoiceRecognition } from '../lib/useVoiceRecognition.js'
 
 const FILTERS = [
   { id: 'all', label: 'All orders' },
@@ -32,72 +33,16 @@ function readyDeleteAvailability(order) {
   return { enabled: false, label: 'Delete available in ' + hours + 'h ' + String(minutes).padStart(2, '0') + 'm' }
 }
 
-function VoiceDictationButton({ language, onTranscript, label = 'Speak', successMessage = 'Voice input filled.' }) {
-  const [listening, setListening] = useState(false)
-  const [message, setMessage] = useState('')
-  const recognitionRef = useRef(null)
-
-  useEffect(() => () => {
-    const recognition = recognitionRef.current
-    if (!recognition) return
-    recognition.onend = null
-    recognition.onerror = null
-    recognition.onresult = null
-    recognition.abort()
-  }, [])
-
-  function toggleListening() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      return
-    }
-    const Recognition = typeof window === 'undefined' ? null : window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!Recognition) {
-      setMessage('Voice input is not supported in this browser. You can type instead.')
-      return
-    }
-    const recognition = new Recognition()
-    recognition.lang = language || 'en-IN'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onresult = (event) => {
-      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim()
-      if (!transcript) {
-        setMessage('No words were recognized. Try again or type the item.')
-        return
-      }
-      onTranscript(transcript)
-      setMessage(successMessage)
-    }
-    recognition.onerror = (event) => {
-      setMessage(event.error === 'not-allowed'
-        ? 'Allow microphone access in your browser to use voice input.'
-        : event.error === 'no-speech'
-          ? 'No speech was detected. Try again.'
-          : 'Voice input could not start. Try again or type the item.')
-    }
-    recognition.onend = () => {
-      recognitionRef.current = null
-      setListening(false)
-    }
-    recognitionRef.current = recognition
-    setListening(true)
-    setMessage('Listening…')
-    try {
-      recognition.start()
-    } catch {
-      recognitionRef.current = null
-      setListening(false)
-      setMessage('Voice input could not start. Try again or type the item.')
-    }
-  }
+function VoiceDictationButton({ language, onTranscript, label = 'Speak' }) {
+  const { listening, message, supported, toggle } = useVoiceRecognition({ language, onTranscript })
 
   return (
     <div className="inventory-voice-control">
-      <button className="inventory-voice-button" type="button" onClick={toggleListening} aria-pressed={listening} aria-label={listening ? 'Stop voice input' : label} title={listening ? 'Stop listening' : label}>
-        {listening ? <MicOff size={15} /> : <Mic size={15} />}{listening ? 'Stop' : label}
+      <button className="inventory-voice-button" type="button" onClick={toggle} aria-pressed={listening} aria-label={listening ? 'Stop voice input' : label} title={listening ? 'Stop listening' : supported ? label : 'Voice recognition may not be available in this browser'}>
+        {listening ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+        <span>{listening ? 'Stop' : label}</span>
       </button>
-      {message && <small className="inventory-voice-message" role="status">{message}</small>}
+      {message && <small className="inventory-voice-message" data-listening={listening ? 'true' : 'false'} role="status" aria-live="polite" aria-atomic="true">{message}</small>}
     </div>
   )
 }
@@ -749,7 +694,7 @@ export default function Dashboard({ orders, products, categories, onAddCategory,
         <div className="inventory-catalogue-search" role="search" aria-label="Search shopkeeper catalogue">
           <label htmlFor="inventory-catalogue-search"><span>Find an item by name or Telugu name</span><input id="inventory-catalogue-search" type="search" value={inventorySearch} onChange={(event) => setInventorySearch(event.target.value)} placeholder="Try rice or a Telugu name" /></label>
           <label><span>Voice language</span><select value={voiceLanguage} onChange={(event) => setVoiceLanguage(event.target.value)} aria-label="Voice search language"><option value="te-IN">తెలుగు</option><option value="en-IN">English</option></select></label>
-          <VoiceDictationButton language={voiceLanguage} onTranscript={setInventorySearch} label="Voice search" successMessage="Catalogue search updated." />
+          <VoiceDictationButton language={voiceLanguage} onTranscript={setInventorySearch} label="Voice search" />
         </div>
         <AddProductForm categories={categories} products={products} onAddProduct={onAddProduct} voiceLanguage={voiceLanguage} />
         <div className="inventory-list" aria-label="Catalogue stock and prices">
