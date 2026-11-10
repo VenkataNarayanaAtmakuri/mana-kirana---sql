@@ -830,7 +830,7 @@ router.post('/orders', requireAuth, orderIpLimiter, orderCustomerLimiter, async 
     const latest = new Date(queue.rows[0].latest).getTime()
     const ready = new Date(Math.max(Date.now() + (count.rows[0].n + 1) * 15 * 60000, latest + 15 * 60000))
     const pickupPin = String(randomInt(0, 10000)).padStart(4, '0')
-    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString()])
+    const order = await client.query('INSERT INTO orders(customer_id,customer_name,customer_phone,pickup_phone,channel,payment_method,subtotal,discount_amount,offer_code,total,pickup_pin,estimated_ready_at,stock_deducted) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,order_number,estimated_ready_at,status,subtotal,discount_amount,offer_code,total,pickup_pin', [req.session.user.id, String(name).trim(), phone, pickupPhone, channel, 'pickup', subtotal, discountAmount, appliedOffer?.code || null, total, pickupPin, ready.toISOString(), false])
     for (const item of normalized) {
       await client.query('INSERT INTO order_items(order_id,product_id,item_name,emoji,quantity,unit,price,line_total,custom_request,price_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [order.rows[0].id, item.product_id || null, item.name, item.emoji || '🛍️', item.quantity, item.unit || 'piece', item.price ?? null, item.line_total ?? null, Boolean(item.custom), !item.custom])
     }
@@ -875,7 +875,7 @@ router.patch('/orders/:id/status', requireAuth, requireShopkeeper, async (req, r
     const allowed = { pending: ['preparing','rejected'], preparing: ['ready'], ready: [] }
     if (next === 'collected') throw new ApiError(400, 'Verify the customer’s 4-digit pickup PIN to complete collection.')
     if (!(allowed[order.status] || []).includes(next)) throw new ApiError(400, 'Invalid order status transition.')
-    if (next === 'preparing') {
+    if (next === 'preparing' && !order.stock_deducted) {
       const items = await client.query(
         'SELECT product_id,SUM(quantity)::numeric AS quantity FROM order_items WHERE order_id=$1 AND custom_request=false AND product_id IS NOT NULL GROUP BY product_id ORDER BY product_id',
         [order.id],
