@@ -44,11 +44,12 @@ export function formatReadyTime(timestamp) {
 }
 
 export function getQuantityOptions(product) {
-  const available = Math.min(100, Math.max(0, Number(product.stock) || 0))
+  const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+  const available = stockKnown ? Math.min(100, Math.max(0, Number(product.stock) || 0)) : 100
   const amounts = product.unit === 'kg' ? [0.25, 0.5, 1, 2, 5] : [1, 2, 3, 5]
-  if (available > 0 && !amounts.some((value) => Math.abs(value - available) < 0.000001)) amounts.push(available)
+  if (stockKnown && available > 0 && !amounts.some((value) => Math.abs(value - available) < 0.000001)) amounts.push(available)
   return [...new Set(amounts)].sort((a, b) => a - b)
-    .map((value) => ({ value, label: formatQuantity(value, product.unit), disabled: value > available + 0.000001 }))
+    .map((value) => ({ value, label: formatQuantity(value, product.unit), disabled: stockKnown ? value > available + 0.000001 : product.inStock !== true }))
 }
 
 export function orderChannelLabel(channel) {
