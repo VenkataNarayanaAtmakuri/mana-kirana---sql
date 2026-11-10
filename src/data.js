@@ -14,7 +14,7 @@ export const PRODUCTS = [
 ]
 
 export const STORAGE_KEY = 'mana-kirana-demo-v1'
-export const MINIMUM_ORDER_VALUE = 200
+export const MINIMUM_ORDER_VALUE = 100
 export const PICKUP_SLOT_MINUTES = 15
 
 export function formatMoney(amount) {
@@ -75,7 +75,7 @@ export function makeSampleOrders() {
     },
     {
       id: 'MK-2047', name: 'Rahul Kumar', phone: '••••• 7306', channel: 'online',
-      status: 'preparing', payment: 'UPI · demo only', total: 254,
+      status: 'preparing', payment: 'Pay at pickup · demo', total: 254,
       createdAt: ago(13), sample: true,
       items: [
         { productId: 'rice', name: 'Sona masoori rice', emoji: '🍚', quantity: 2, unit: 'kg', price: 68, lineTotal: 136 },
