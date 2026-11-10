@@ -1,18 +1,38 @@
 # Mana Kirana — standalone PostgreSQL edition
 
-This copy replaces the Supabase browser client and Supabase Auth with a React/Vite frontend, an Express API, and a managed PostgreSQL database. It starts with a **new, empty database**. It does not connect to, modify, or delete anything in your old Supabase project.
+This app uses a React/Vite frontend, an Express REST API, and PostgreSQL. `src/lib/supabaseClient.js` is retained as a compatibility adapter name; it sends requests to the Express API and does not use Supabase Auth or the Supabase SDK. The app starts with a **new, empty database** and does not connect to or change data in an old Supabase project.
 
 ## Architecture
 
-- `src/`: existing React customer/shopkeeper UI
-- `server/src/`: Express REST API, PostgreSQL queries, phone/password authentication, server-side sessions
+- `src/`: React/Vite customer and shopkeeper app
+- `src/lib/supabaseClient.js`: compatibility adapter that calls the Express API over HTTP
+- `server/src/`: Express REST API, PostgreSQL queries, phone/password authentication, and server-side sessions
 - `server/sql/schema.sql`: schema for a fresh PostgreSQL database
-- `VITE_API_URL`: public frontend API URL only
+- `VITE_API_URL`: public URL of the Express API; it is not a secret
 - `server/.env`: private backend configuration; never commit it
+
+## Features
+
+**Customer**
+
+- Browse the shared grocery catalogue, search by name, choose quantities, and request an unlisted item.
+- Place online pre-orders or entrance-QR orders, provide an optional alternate pickup number, and track order status and history.
+- Save regular shopping lists, use active offers, and view a monthly spending summary.
+
+**Shopkeeper**
+
+- Manage the order queue and collect ready orders with the customer's four-digit pickup PIN.
+- Manage catalogue categories, prices, stock, product photos, expiry dates, offers, opening hours, and public contact details.
+- View low-stock and expiry alerts, restock suggestions, daily sales, and CSV exports.
+
+**Voice input**
+
+- Customer and shopkeeper voice search support English and Telugu selection. In the catalogue form, the item-name mic is set to English and the optional local-name mic to Telugu.
+- Voice typing uses the browser's speech-recognition service. Language support and transcription accuracy vary by browser, device, microphone, and network; review dictated words before saving.
 
 ## Prerequisites
 
-- Node.js 20+ (Node 22 LTS recommended)
+- Node.js 20.19+ or 22.12+ (Node 22 LTS recommended)
 - A managed PostgreSQL database with SSL support
 - Your provider's PostgreSQL connection string
 
@@ -22,7 +42,15 @@ Create a new, empty database in your managed PostgreSQL provider. Do not reuse o
 
 The schema is for a new database. Do not run it against production data without reviewing the SQL and taking a backup.
 
-For an existing database, apply the SQL scripts under `server/sql/migrations` before deploying a feature that adds a column. The alternate pickup contact feature requires `server/sql/migrations/20261028_add_pickup_phone.sql`; existing orders keep a null alternate number. The six shop features in `server/sql/migrations/20261106_six_shop_features.sql` add four-digit pickup PINs, offer discounts, expiry dates, and store settings, and backfill existing orders with four-digit PINs. Apply this migration before deploying the updated API and frontend. The editable public shop contact page uses `server/sql/migrations/20261109_store_contact_details.sql`; apply it before saving contact changes in the shopkeeper dashboard. Password recovery uses `server/sql/migrations/20261109_recovery_codes.sql`; apply it before deploying the recovery-code feature. It stores only hashed, single-use codes and does not require an SMS or email service. Product photos use `server/sql/migrations/20261109_product_images.sql`; apply it before deploying catalogue image uploads. Images are resized in the browser and saved in PostgreSQL, so no storage token or extra service is required.
+For an existing database, apply each migration once, in filename order, before deploying the matching API/frontend changes. Current migrations are:
+
+1. `server/sql/migrations/20261028_add_pickup_phone.sql` — adds the optional alternate pickup number.
+2. `server/sql/migrations/20261106_six_shop_features.sql` — adds pickup PINs, offers/discounts, expiry dates, and store settings; existing orders receive four-digit PINs.
+3. `server/sql/migrations/20261109_product_images.sql` — adds PostgreSQL-backed catalogue images.
+4. `server/sql/migrations/20261109_recovery_codes.sql` — adds hashed, single-use password recovery codes; no SMS or email service is required.
+5. `server/sql/migrations/20261109_store_contact_details.sql` — adds editable public shop contact details.
+
+For a new database, run the current `server/sql/schema.sql` once instead of applying these migrations. Do not run the fresh-database schema against an existing database.
 
 ## 2. Configure the backend
 
@@ -95,21 +123,23 @@ Replace the placeholder with your own normalized number. Do not expose shopkeepe
 - Existing Supabase Auth accounts are not copied to this new database. This project starts with a fresh user table as requested.
 - For production, use HTTPS, set `NODE_ENV=production`, set `FRONTEND_URL` to the exact HTTPS origin, configure `TRUST_PROXY=true` only behind a trusted proxy, and review CSRF protections and cookie settings.
 
-## Current API endpoints
+## API endpoints
 
-- `GET /api/health`
-- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/change-password` (signed-in customer or shopkeeper; current password required), `POST /api/auth/recovery-code` (create your one-time code), `POST /api/auth/recovery-code/customer` (shopkeeper-issued code after in-person identity check), `POST /api/auth/reset-password`, `GET /api/auth/me`, `POST /api/auth/logout`
-- `GET /api/catalog` (catalogue, current offers, and store availability)
-- `GET /api/orders`, `POST /api/orders` (account mobile required; optional alternate pickup mobile; creates a four-digit pickup PIN)
-- `PATCH /api/orders/:id/status`, `POST /api/orders/:id/collect` (shopkeeper must verify the customer's four-digit pickup PIN)
-- `POST /api/offers/validate`, `POST /api/offers`, `PATCH /api/offers/:id`
-- `PATCH /api/store-settings`
-- `GET /api/reports/daily-sales`, `GET /api/reports/restock`, `GET /api/reports/export.csv?type=sales|inventory`
-- `PATCH /api/order-items/:id/price`
-- `GET /api/messages`
-- `POST /api/categories`, `DELETE /api/categories/:id`
-- `POST /api/products`, `PATCH /api/products/:id`, `DELETE /api/products/:id` (optional expiry date)
-- `GET /api/profile/:id`, `PATCH /api/profile/:id` (edit your name and sign-in mobile; changing the mobile requires your current password)
+All routes below are prefixed with `/api`.
+
+- Health: `GET /health`
+- Authentication: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/change-password`, `POST /auth/recovery-code`, `POST /auth/recovery-code/customer`, `POST /auth/reset-password`, `POST /auth/link-account`, `POST /auth/switch-account`
+- Profiles: `GET /profile/:id`, `PATCH /profile/:id`
+- Catalogue: `GET /catalog`; product management uses `POST /products`, `PATCH /products/:id`, and `DELETE /products/:id`
+- Product photos: `GET /products/:id/image`, `PUT /products/:id/image`, `DELETE /products/:id/image`
+- Orders: `GET /orders`, `POST /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/collect`, `DELETE /orders/:id`
+- Requested-item pricing: `PATCH /order-items/:id/price`
+- Customer spending summary: `GET /customer/spending-summary`
+- Offers: `POST /offers/validate`, `POST /offers`, `PATCH /offers/:id`, `DELETE /offers/:id`
+- Store settings and public contact: `PATCH /store-settings`, `PATCH /store-contact`
+- Categories: `POST /categories`, `DELETE /categories/:id`
+- Shopkeeper reports: `GET /reports/daily-sales`, `GET /reports/restock`, `GET /reports/export.csv?type=sales|inventory`
+- Account updates: `GET /messages`
 
 The old Supabase realtime channels are replaced with 5-second polling. This is a simple first implementation; WebSockets can be added later if needed.
 
@@ -119,7 +149,7 @@ The old Supabase realtime channels are replaced with 5-second polling. This is a
 - Payments remain demo/pickup-only; no real UPI or payment gateway is integrated.
 - Signup does not verify phone ownership. Password reset uses a private, single-use recovery code instead of paid SMS or email; customers who lose the code need the shopkeeper to verify them in person and issue a replacement.
 - A full production security review, CSRF defense for cookie-authenticated mutations, audit logging, backup/restore drill, and deployment-specific TLS/CORS review are still required.
-- Run `npm run build` in the root and `npm run check` / `npm start` in `server` before deployment.
+- Run `npm run build` in the project root and `npm run check` in `server/`. The check script validates JavaScript syntax; it is not an end-to-end test. With a configured PostgreSQL database, start the API using `npm start` and verify the app flows before production.
 
 ## Supabase rollback / preservation
 
