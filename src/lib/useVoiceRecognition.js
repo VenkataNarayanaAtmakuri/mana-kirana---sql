@@ -101,7 +101,10 @@ export function useVoiceRecognition({ language = 'en-IN', onTranscript }) {
         callbackRef.current?.(transcriptRef.current)
       }
 
-      if (!shouldListenRef.current) return
+      if (!shouldListenRef.current) {
+        if (finalText) setMessage('Recognized words are saved. Check spelling before adding the item.')
+        return
+      }
       reconnectMessageRef.current = ''
       if (interimText) {
         setMessage('Hearing: ' + interimText.trim() + ' · pause briefly to confirm the words.')
