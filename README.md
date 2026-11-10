@@ -50,6 +50,7 @@ For an existing database, apply each migration once, in filename order, before d
 4. `server/sql/migrations/20261109_recovery_codes.sql` — adds hashed, single-use password recovery codes; no SMS or email service is required.
 5. `server/sql/migrations/20261109_store_contact_details.sql` — adds editable public shop contact details.
 6. `server/sql/migrations/20261110_minimum_order_100.sql` — updates the order total constraint to allow the new ₹100 minimum.
+7. `server/sql/migrations/20261110_security_hardening.sql` — creates the shared rate-limit and server-session tables used by the API.
 
 For a new database, run the current `server/sql/schema.sql` once instead of applying these migrations. Do not run the fresh-database schema against an existing database.
 
