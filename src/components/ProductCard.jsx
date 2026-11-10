@@ -7,9 +7,10 @@ export default function ProductCard({ product, quantity, onChange }) {
   const [customUnit, setCustomUnit] = useState('g')
   const [imageFailed, setImageFailed] = useState(false)
   useEffect(() => setImageFailed(false), [product.imageUrl])
-  const available = Math.max(0, Number(product.stock) || 0)
+  const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
+  const available = stockKnown ? Math.max(0, Number(product.stock) || 0) : 100
   const selectedQuantity = Number(quantity) || 0
-  const outOfStock = quantities.length === 0
+  const outOfStock = stockKnown ? quantities.length === 0 : product.inStock !== true
   const customValue = Number(customAmount)
   const isLooseProduct = product.unit === 'kg'
   const customQuantity = isLooseProduct ? customValue / (customUnit === 'kg' ? 1 : 1000) : customValue
