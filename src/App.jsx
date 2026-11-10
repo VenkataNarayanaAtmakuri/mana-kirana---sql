@@ -697,7 +697,7 @@ function App() {
     const product = products.find((item) => item.id === productId)
     if (!product) return
     if (quantity > product.stock + 0.001) {
-      setNotice('Only ' + product.stock + ' ' + product.unit + ' of ' + product.name + ' are available.')
+      setNotice('That amount isn’t available. Choose a smaller quantity or try again later.')
       const precision = product.unit === 'kg' ? 100 : 1
       quantity = Math.floor((product.stock + 0.000001) * precision) / precision
     }
