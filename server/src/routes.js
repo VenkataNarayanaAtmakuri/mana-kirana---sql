@@ -691,7 +691,7 @@ router.post('/orders', requireAuth, async (req, res) => {
       const product = await client.query("SELECT id,name,price,stock,unit,emoji FROM products WHERE id=$1 AND active=true AND (expires_on IS NULL OR expires_on >= (now() AT TIME ZONE 'Asia/Kolkata')::date) FOR UPDATE", [item.product_id])
       if (!product.rows[0]) throw new Error('A selected product is no longer available.')
       const p = product.rows[0]
-      if (Number(p.stock) < qty) throw new Error(`${p.name} does not have enough stock.`)
+      if (Number(p.stock) < qty) throw new Error(`${p.name} isn’t available in that quantity. Reduce the amount and try again.`)
       const currentPrice = roundMoney(Number(p.price))
       const submittedPrice = Number(item.price)
       if ((!Number.isFinite(submittedPrice) || roundMoney(submittedPrice) !== currentPrice)
