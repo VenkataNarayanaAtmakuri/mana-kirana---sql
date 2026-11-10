@@ -144,7 +144,7 @@ export default function CartPanel({
             <button className="place-order-button" type="submit" disabled={discountedTotal < minimumOrderValue || !storeAcceptingOrders || (coupon && total < coupon.minimumOrder)}>
               {!storeAcceptingOrders ? 'Ordering is paused' : discountedTotal < minimumOrderValue ? <>Minimum is ₹{minimumOrderValue}</> : customItems.length ? <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)} confirmed + price pending</span></> : <>{liveMode ? 'Place order' : 'Place demo order'} <span>{formatMoney(discountedTotal)}</span></>}
             </button>
-            <p className="payment-footnote">{customItems.length ? 'The shopkeeper will confirm requested-item prices. Pay at the shop when collecting your groceries (cash or UPI).' : liveMode ? 'Pay at the shop when collecting your groceries (cash or UPI).' : 'Demo orders do not process payments. Live orders are paid for at the shop when collected.'}</p>
+            <p className="payment-footnote">{customItems.length ? 'The shopkeeper will confirm requested-item prices. Pay when collecting your groceries at the shop.' : liveMode ? 'Pay when collecting your groceries at the shop.' : 'Demo orders do not process payments. Live orders are paid for when collected at the shop.'}</p>
           </form>
         </>
       )}
