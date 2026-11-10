@@ -736,10 +736,12 @@ function App() {
     setSuccessOrderId('')
   }
 
-  function addSavedItemsToCart(savedItems) {
+  async function addSavedItemsToCart(savedItems) {
+    const originalCart = { ...cart }
     const nextCart = { ...cart }
     let added = 0
     let skipped = 0
+    const availabilityChecks = new Set()
     for (const savedItem of savedItems) {
       const product = products.find((item) => item.id === savedItem.productId)
       if (!product || (product.stock == null && product.inStock !== true)) { skipped += 1; continue }
@@ -752,7 +754,23 @@ function App() {
       if (quantity <= 0) { skipped += 1; continue }
       nextCart[product.id] = Math.round((alreadyInCart + quantity) * 100) / 100
       added += 1
+      if (!stockKnown && supabaseConfigured) availabilityChecks.add(product.id)
       if (quantity + 0.001 < requested) skipped += 1
+    }
+    if (availabilityChecks.size) {
+      try {
+        const checked = await checkLiveAvailability([...availabilityChecks].map((productId) => ({ productId, quantity: nextCart[productId] })))
+        const unavailable = new Set(checked.items.filter((item) => !item.available).map((item) => item.productId))
+        for (const productId of unavailable) {
+          if (Object.prototype.hasOwnProperty.call(originalCart, productId)) nextCart[productId] = originalCart[productId]
+          else delete nextCart[productId]
+          added = Math.max(0, added - 1)
+          skipped += 1
+        }
+      } catch {
+        setNotice('Could not check stock. Try again in a moment.')
+        return
+      }
     }
     setCart(nextCart)
     selectView('shop')
@@ -760,11 +778,13 @@ function App() {
     setNotice(added ? added + ' saved item' + (added === 1 ? '' : 's') + ' added at today’s prices.' + (skipped ? ' Some unavailable quantities were skipped.' : '') : 'Those saved items are no longer available.')
   }
 
-  function reorderCollectedOrder(order) {
+  async function reorderCollectedOrder(order) {
     if (order.status !== 'collected') return
+    const originalCart = { ...cart }
     const nextCart = { ...cart }
     let added = 0
     let skipped = 0
+    const availabilityChecks = new Set()
     for (const item of order.items || []) {
       if (item.custom || !item.productId) { skipped += 1; continue }
       const product = products.find((entry) => entry.id === item.productId)
@@ -778,7 +798,23 @@ function App() {
       if (quantity <= 0) { skipped += 1; continue }
       nextCart[product.id] = Math.round((inCart + quantity) * 100) / 100
       added += 1
+      if (!stockKnown && supabaseConfigured) availabilityChecks.add(product.id)
       if (quantity + 0.001 < requested) skipped += 1
+    }
+    if (availabilityChecks.size) {
+      try {
+        const checked = await checkLiveAvailability([...availabilityChecks].map((productId) => ({ productId, quantity: nextCart[productId] })))
+        const unavailable = new Set(checked.items.filter((item) => !item.available).map((item) => item.productId))
+        for (const productId of unavailable) {
+          if (Object.prototype.hasOwnProperty.call(originalCart, productId)) nextCart[productId] = originalCart[productId]
+          else delete nextCart[productId]
+          added = Math.max(0, added - 1)
+          skipped += 1
+        }
+      } catch {
+        setNotice('Could not check stock. Try again in a moment.')
+        return
+      }
     }
     setCart(nextCart)
     selectView('shop')
