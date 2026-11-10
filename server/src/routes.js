@@ -355,7 +355,10 @@ router.get('/catalog', async (req, res) => {
     pool.query('SELECT id,title,code,discount_percent,minimum_order,active,starts_at,ends_at FROM offers ' + offerFilter + ' ORDER BY created_at DESC'),
     readStoreStatus(),
   ])
-  res.json({ categories: categories.rows, products: products.rows, offers: offers.rows, storeStatus })
+  const publicProducts = shopkeeperView
+    ? products.rows
+    : products.rows.map(({ stock, ...product }) => ({ ...product, in_stock: Number(stock) > 0 }))
+  res.json({ categories: categories.rows, products: publicProducts, offers: offers.rows, storeStatus })
 })
 router.get('/products/:id/image', async (req, res) => {
   if (!PRODUCT_ID_PATTERN.test(req.params.id)) return res.status(404).json({ error: 'Product image not found.' })
