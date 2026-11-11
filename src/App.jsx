@@ -7,6 +7,7 @@ import EditProfileDialog from './components/EditProfileDialog.jsx'
 import CartPanel from './components/CartPanel.jsx'
 import CustomerOrderHistory from './components/CustomerOrderHistory.jsx'
 import OrderNotificationControl from './components/OrderNotificationControl.jsx'
+import InstallAppButton from './components/InstallAppButton.jsx'
 import SavedShoppingLists from './components/SavedShoppingLists.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import ProductCard from './components/ProductCard.jsx'
@@ -121,6 +122,7 @@ function AppHeader({ view, onViewChange, itemCount, pendingCount, authUser, prof
             {theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
             <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
           </button>
+          {view !== 'dashboard' && <InstallAppButton />}
           {supabaseConfigured && (authUser
             ? <>
                 <button className="account-button account-switch-button" type="button" disabled={accountSwitchBusy} onClick={authUser.linkedAccount ? onSwitchAccount : onAddAccount}>
