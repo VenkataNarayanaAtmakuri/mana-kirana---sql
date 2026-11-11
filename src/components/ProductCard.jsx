@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { formatMoney, getQuantityOptions } from '../data.js'
 
-export default function ProductCard({ product, quantity, onChange }) {
+function ProductCard({ product, quantity, onChange }) {
   const quantities = getQuantityOptions(product).filter((option) => !option.disabled)
   const [customAmount, setCustomAmount] = useState('')
   const [customUnit, setCustomUnit] = useState('g')
@@ -38,11 +38,11 @@ export default function ProductCard({ product, quantity, onChange }) {
         {outOfStock ? <div className="quantity-controls quantity-unavailable"><span className="badge b-warn" role="status">Out of stock</span></div> : (
           <div className="quantity-controls">
             <div className="quantity-quick-picks" aria-label={'Common amounts of ' + product.name}>
-              {quantities.map((option) => <button className="quantity-quick-pick" key={option.value} type="button" aria-pressed={Math.abs(selectedQuantity - Number(option.value)) < 0.000001} onClick={() => onChange(Number(option.value))}>{option.label}</button>)}
+              {quantities.map((option) => <button className="quantity-quick-pick" key={option.value} type="button" aria-pressed={Math.abs(selectedQuantity - Number(option.value)) < 0.000001} onClick={() => onChange(product.id, Number(option.value))}>{option.label}</button>)}
             </div>
             <form className="custom-quantity-form" onSubmit={(event) => {
               event.preventDefault()
-              if (customValid) { onChange(customQuantity); setCustomAmount('') }
+              if (customValid) { onChange(product.id, customQuantity); setCustomAmount('') }
             }}>
               <div className="custom-amount-entry">
                 <label className="quantity-picker">
@@ -53,7 +53,7 @@ export default function ProductCard({ product, quantity, onChange }) {
               </div>
               <button className="btn quantity-set-button" type="submit" disabled={!customValid}>Set amount</button>
             </form>
-            {selectedQuantity > 0 && <button className="quantity-clear-button" type="button" onClick={() => onChange(0)}>Remove</button>}
+            {selectedQuantity > 0 && <button className="quantity-clear-button" type="button" onClick={() => onChange(product.id, 0)}>Remove</button>}
           </div>
         )}
         {selectedQuantity > 0 && <strong className="selected-total">{formatMoney(product.price * selectedQuantity)}</strong>}
@@ -61,3 +61,5 @@ export default function ProductCard({ product, quantity, onChange }) {
     </li>
   )
 }
+
+export default memo(ProductCard)
