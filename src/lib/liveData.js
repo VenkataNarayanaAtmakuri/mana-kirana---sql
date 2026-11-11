@@ -95,11 +95,48 @@ export async function changeLivePassword(currentPassword, newPassword) { return 
 export async function createLiveRecoveryCode(currentPassword) { return request('/api/auth/recovery-code', { method: 'POST', body: JSON.stringify({ currentPassword }) }) }
 export async function issueCustomerRecoveryCode(phone, currentPassword) { return request('/api/auth/recovery-code/customer', { method: 'POST', body: JSON.stringify({ phone, currentPassword }) }) }
 export async function resetLivePasswordWithRecoveryCode(phone, recoveryCode, newPassword) { return request('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ phone, recoveryCode, newPassword }) }) }
-function poll(onChange, onStatus, account = false) {
+function poll(onChange, onStatus, intervalMs) {
   let active = true
-  const check = async () => { try { if (account) await request('/api/auth/me'); if (active) { onChange(); onStatus?.('SUBSCRIBED') } } catch (error) { onStatus?.('ERROR', error) } }
-  const timer = window.setInterval(check, 5000)
-  return () => { active = false; window.clearInterval(timer) }
+  let inFlight = false
+  let lastCompletedAt = Date.now()
+
+  const check = async (force = false) => {
+    if (!active || document.visibilityState === 'hidden' || inFlight) return
+    const elapsed = Date.now() - lastCompletedAt
+    if (!force && elapsed < intervalMs) return
+    if (force && elapsed < Math.min(5000, intervalMs)) return
+
+    inFlight = true
+    try {
+      await onChange()
+      if (active) {
+        lastCompletedAt = Date.now()
+        onStatus?.('SUBSCRIBED')
+      }
+    } catch (error) {
+      if (active) {
+        lastCompletedAt = Date.now()
+        onStatus?.('ERROR', error)
+      }
+    } finally {
+      inFlight = false
+    }
+  }
+
+  const timer = window.setInterval(() => { void check() }, intervalMs)
+  const refreshWhenVisible = () => {
+    if (document.visibilityState !== 'hidden') void check(true)
+  }
+  window.addEventListener('focus', refreshWhenVisible)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+  onStatus?.('SUBSCRIBED')
+
+  return () => {
+    active = false
+    window.clearInterval(timer)
+    window.removeEventListener('focus', refreshWhenVisible)
+    document.removeEventListener('visibilitychange', refreshWhenVisible)
+  }
 }
-export function subscribeToCatalog(onChange, onStatus) { return poll(onChange, onStatus) }
-export function subscribeToAccount(onChange, onStatus) { return poll(onChange, onStatus, true) }
+export function subscribeToCatalog(onChange, onStatus) { return poll(onChange, onStatus, 30000) }
+export function subscribeToAccount(onChange, onStatus) { return poll(onChange, onStatus, 20000) }
