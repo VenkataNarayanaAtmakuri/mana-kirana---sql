@@ -157,3 +157,10 @@ The routes below are relative to the configured backend URL.
 ## Supabase rollback / preservation
 
 The original Supabase project and its data are untouched. Keep the old ZIP and Supabase project until this new copy has been tested and you explicitly approve a production cutover. Do not delete the old project as part of this setup.
+
+
+## Install Mana Kirana on a phone
+
+Mana Kirana can be installed from its website as a home-screen app. Open the site in a supported browser and choose **Install app**. On iPhone or iPad, open the site in Safari, tap **Share**, then choose **Add to Home Screen**.
+
+The installed app uses the same live catalogue, account, and order pages as the website. An internet connection is needed for current prices, stock checks, sign-in, and orders; order or account data is not cached for offline use.

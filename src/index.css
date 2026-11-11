@@ -2848,3 +2848,16 @@ button:active:not(:disabled) { transform: translateY(1px); }
 :root[data-theme="dark"] .live-banner .demo-banner-icon {
   color: #278449;
 }
+
+
+/* Installable Mana Kirana app */
+.install-app-control { position: relative; }
+.install-app-button { display: inline-flex; align-items: center; gap: 7px; border-color: var(--primary); color: var(--primary); white-space: nowrap; }
+.install-app-button:hover { background: var(--surface-2); }
+.install-app-help { position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; width: min(320px, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.install-app-help p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.install-app-help button { display: block; margin: 10px 0 0 auto; padding: 4px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--primary); font-weight: 700; }
+@media (max-width: 540px) {
+  .install-app-control { flex: 0 0 auto; }
+  .install-app-help { left: 0; right: auto; }
+}
