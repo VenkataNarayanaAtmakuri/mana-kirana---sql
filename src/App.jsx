@@ -255,6 +255,7 @@ function App() {
   const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported')
   const notificationEnabledRef = useRef(false)
   const availabilitySequence = useRef(new Map())
+  const catalogSnapshotRef = useRef('')
   const savedShoppingListsKey = 'mana-kirana-saved-lists:v1:' + (authUser?.id || 'guest')
 
   useLayoutEffect(() => {
@@ -424,15 +425,27 @@ function App() {
     }
   }
 
+  const applyLiveCatalog = useCallback((result) => {
+    const categories = result.categories || []
+    const nextProducts = result.products || []
+    const nextOffers = result.offers || []
+    const nextStoreStatus = result.storeStatus || null
+    const snapshot = JSON.stringify([categories, nextProducts, nextOffers, nextStoreStatus])
+    if (snapshot === catalogSnapshotRef.current) return false
+    catalogSnapshotRef.current = snapshot
+    setRemoteCategories(categories)
+    setProducts(nextProducts)
+    setOffers(nextOffers)
+    setStoreStatus(nextStoreStatus)
+    return true
+  }, [])
+
   const refreshLiveCatalog = useCallback(async () => {
     const result = await fetchLiveCatalog()
-    setRemoteCategories(result.categories)
-    setProducts(result.products)
-    setOffers(result.offers || [])
-    setStoreStatus(result.storeStatus || null)
+    applyLiveCatalog(result)
     setLiveError('')
     return result
-  }, [])
+  }, [applyLiveCatalog])
 
   const refreshLiveAccount = useCallback(async () => {
     if (!authUser) return
@@ -455,10 +468,7 @@ function App() {
       try {
         const result = await fetchLiveCatalog()
         if (active) {
-          setRemoteCategories(result.categories)
-          setProducts(result.products)
-          setOffers(result.offers || [])
-          setStoreStatus(result.storeStatus || null)
+          applyLiveCatalog(result)
           setLiveError('')
         }
       } catch (error) {
@@ -468,9 +478,10 @@ function App() {
       }
     }
     void loadCatalog()
-    const unsubscribe = subscribeToCatalog(() => {
-      void refreshLiveCatalog().catch((error) => setLiveError('Catalogue update failed: ' + error.message))
-    }, (status, error) => {
+    const unsubscribe = subscribeToCatalog(() => refreshLiveCatalog().catch((error) => {
+      if (active) setLiveError('Catalogue update failed: ' + error.message)
+      throw error
+    }), (status, error) => {
       if (status === 'SUBSCRIBED') {
         setRealtimeConnected(true)
         setLiveError((current) => current.startsWith('Realtime connection') ? '' : current)
@@ -480,7 +491,7 @@ function App() {
       }
     })
     return () => { active = false; unsubscribe() }
-  }, [refreshLiveCatalog])
+  }, [applyLiveCatalog, refreshLiveCatalog])
 
   useEffect(() => {
     notificationEnabledRef.current = notificationsEnabled
@@ -513,6 +524,8 @@ function App() {
           fetchCustomerMessages(),
         ])
         if (!active) return
+        const snapshot = JSON.stringify([nextOrders, nextCustomerOrders, nextMessages])
+        if (baseline?.snapshot === snapshot) return
         if (baseline && notificationEnabledRef.current && typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
           const previousOrderIds = new Set(baseline.orders)
           const newOrder = isShopkeeper ? nextOrders.find((order) => order.status === 'pending' && !previousOrderIds.has(order.dbId || order.id)) : null
@@ -522,6 +535,7 @@ function App() {
           else if (newMessage) showOrderNotification('Order update', newMessage.body)
         }
         baseline = {
+          snapshot,
           orders: nextOrders.map((order) => order.dbId || order.id),
           messages: nextMessages.map((message) => message.id),
         }
@@ -533,7 +547,7 @@ function App() {
       }
     }
     void loadAccount()
-    const unsubscribe = subscribeToAccount(() => { void loadAccount() }, (status, error) => {
+    const unsubscribe = subscribeToAccount(loadAccount, (status, error) => {
       if (status === 'SUBSCRIBED') setRealtimeConnected(true)
       else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         setRealtimeConnected(false)
@@ -697,7 +711,7 @@ function App() {
     } catch (error) { setLiveError(error.message); setNotice('Could not download CSV: ' + error.message) }
   }
 
-  async function changeQuantity(productId, quantity) {
+  const changeQuantity = useCallback(async (productId, quantity) => {
     const product = products.find((item) => item.id === productId)
     if (!product) return
     const stockKnown = product.stock !== null && product.stock !== undefined && Number.isFinite(Number(product.stock))
@@ -736,7 +750,7 @@ function App() {
       return next
     })
     setSuccessOrderId('')
-  }
+  }, [products])
 
   async function addSavedItemsToCart(savedItems) {
     const originalCart = { ...cart }
@@ -1391,7 +1405,7 @@ function App() {
                 <p className="results-label">{category === 'All items' ? 'Everyday essentials' : category}<span> · {visibleProducts.length} items</span></p>
                 {visibleProducts.length ? (
                   <ul className="product-list">{visibleProducts.map((product) => (
-                    <ProductCard key={product.id} product={product} quantity={cart[product.id] || 0} onChange={(quantity) => changeQuantity(product.id, quantity)} />
+                    <ProductCard key={product.id} product={product} quantity={cart[product.id] || 0} onChange={changeQuantity} />
                   ))}</ul>
                 ) : (
                   <div className="empty-results"><strong>Nothing matches that search.</strong><span>Try another word or pick a category.</span></div>
